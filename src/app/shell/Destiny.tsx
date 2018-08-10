@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { UIView } from "@uirouter/react";
 import ManifestProgress from './ManifestProgress';
+import ActivityMonitor from '../activity-monitor/activity-monitor';
 import { $rootScope } from 'ngimport';
 import { hotkeys } from '../ngimport-more';
 import { t } from 'i18next';
@@ -54,6 +55,7 @@ export default class Destiny extends React.Component<Props> {
           <UIView/>
         </div>
         <ManifestProgress destinyVersion={this.props.account.destinyVersion} />
+        <ActivityMonitor />
       </>
     );
   }
