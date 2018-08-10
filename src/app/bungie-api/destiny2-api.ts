@@ -80,6 +80,16 @@ export function getProgression(platform: DestinyAccount): Promise<DestinyProfile
 }
 
 /**
+ * Get the user's activity state for all characters.
+ */
+export function getActivities(platform: DestinyAccount): Promise<DestinyProfileResponse> {
+  return getProfile(platform,
+    DestinyComponentType.Characters,
+    DestinyComponentType.CharacterActivities
+  );
+}
+
+/**
  * Get the user's kiosk status for all characters on this platform. This is a completely separate
  * call in hopes of separating the collections page into an independent thing.
  */

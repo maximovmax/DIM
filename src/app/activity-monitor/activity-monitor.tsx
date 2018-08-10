@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { DestinyAccount } from '../accounts/destiny-account.service';
 import { getActiveAccountStream } from '../accounts/platform.service';
-import { Subscription } from '../../../node_modules/rxjs/Subscription';
+import { Subscription } from 'rxjs/Subscription';
+import { getActivities$ } from './activity-monitor.service';
 
 interface State {
   account?: DestinyAccount;
-  enabled: boolean;
+  activity?: any;
 }
 
 export default class ActivityMonitor extends React.Component<{}, State> {
@@ -15,7 +16,8 @@ export default class ActivityMonitor extends React.Component<{}, State> {
     super(props);
 
     this.state = {
-      enabled: false
+      account: undefined,
+      activity: undefined
     };
   }
 
@@ -24,6 +26,16 @@ export default class ActivityMonitor extends React.Component<{}, State> {
       this.setState({
         account: account || undefined
       });
+
+      if (account) {
+        getActivities$(account).then((result) => {
+          console.log(result);
+
+          this.setState({
+            activity: result || undefined
+          });
+        });
+      }
     });
   }
 
@@ -35,7 +47,12 @@ export default class ActivityMonitor extends React.Component<{}, State> {
     return (
       <div className="activity-monitor">
         <h2>Activity Monitor</h2>
-        <div>{(this.state.account) ? this.state.account.displayName : ''} is not playing Destiny.</div>
+        <h3>{(this.state.account) ? this.state.account.displayName : ''}</h3>
+        <h4>{(this.state.activity) ? this.state.activity.place.displayProperties.name : 'Offline'}</h4>
+        <h4>{(this.state.activity) ? this.state.activity.destination.displayProperties.name : 'Offline'}</h4>
+        <h4>{(this.state.activity) ? this.state.activity.activity.displayProperties.name : 'Offline'}</h4>
+        <h4>{(this.state.activity && this.state.activity.activityMode) ? this.state.activity.activityMode.displayProperties.name : 'Offline'}</h4>
+        <h4>{(this.state.activity && this.state.activity.activityType) ? this.state.activity.activityType.displayProperties.name : 'Offline'}</h4>
       </div>
     );
   }
