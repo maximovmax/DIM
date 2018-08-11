@@ -2,11 +2,11 @@ import * as React from 'react';
 import { DestinyAccount } from '../accounts/destiny-account.service';
 import { getActiveAccountStream } from '../accounts/platform.service';
 import { Subscription } from 'rxjs/Subscription';
-import { getActivities$ } from './activity-monitor.service';
+import { getActivities$, ActivityResult } from './activity-monitor.service';
 
 interface State {
   account?: DestinyAccount;
-  activity?: any;
+  activity?: ActivityResult;
 }
 
 export default class ActivityMonitor extends React.Component<{}, State> {
