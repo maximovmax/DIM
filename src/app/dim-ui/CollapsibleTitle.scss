@@ -46,3 +46,8 @@
 .collapse-handle {
   cursor: pointer;
 }
+
+.collapse-content {
+  overflow: hidden;
+  will-change: height;
+}

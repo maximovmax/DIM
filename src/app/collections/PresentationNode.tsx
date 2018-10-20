@@ -149,21 +149,35 @@ export default class PresentationNode extends React.Component<Props> {
             </span>
           </div>
         )}
-        {childrenExpanded &&
-          presentationNodeDef.children.presentationNodes.map((node) => (
-            <PresentationNode
-              key={node.presentationNodeHash}
-              presentationNodeHash={node.presentationNodeHash}
-              defs={defs}
-              profileResponse={profileResponse}
-              buckets={buckets}
-              ownedItemHashes={ownedItemHashes}
-              path={path}
-              parents={parents}
-              onNodePathSelected={onNodePathSelected}
-              collectionCounts={collectionCounts}
-            />
-          ))}
+
+        <Transition
+          native={true}
+          keys={
+            childrenExpanded &&
+            presentationNodeDef.children.presentationNodes.map((node) => node.presentationNodeHash)
+          }
+          initial={null}
+          from={{ height: 0 }}
+          enter={{ height: 'auto' }}
+          leave={{ height: 0 }}
+        >
+          {childrenExpanded &&
+            presentationNodeDef.children.presentationNodes.map((node) => (styles) => (
+              <PresentationNode
+                style={styles}
+                key={node.presentationNodeHash}
+                presentationNodeHash={node.presentationNodeHash}
+                defs={defs}
+                profileResponse={profileResponse}
+                buckets={buckets}
+                ownedItemHashes={ownedItemHashes}
+                path={path}
+                parents={parents}
+                onNodePathSelected={onNodePathSelected}
+                collectionCounts={collectionCounts}
+              />
+            ))}
+        </Transition>
         {childrenExpanded &&
           visible > 0 && (
             <div className="collectibles">
