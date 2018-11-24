@@ -1,11 +1,8 @@
-import { angular2react } from 'angular2react';
 import classNames from 'classnames';
 import { t } from 'i18next';
 import * as React from 'react';
-import { Subscription } from 'rxjs/Subscription';
 import { DestinyAccount } from '../accounts/destiny-account.service';
 import { getActiveAccountStream } from '../accounts/platform.service';
-import { SearchFilterComponent } from '../search/search-filter.component';
 import AccountSelect from '../accounts/account-select';
 import { CSSTransition, TransitionGroup } from 'react-transition-group';
 import Link from './Link';
@@ -16,13 +13,15 @@ import './header.scss';
 import logo from 'app/images/logo-type-right-light.svg';
 import ClickOutside from '../dim-ui/ClickOutside';
 import Refresh from './refresh';
-import { IRootScopeService } from 'angular';
 import RatingMode from './rating-mode/RatingMode';
 import { settings } from '../settings/settings';
 import WhatsNewLink from '../whats-new/WhatsNewLink';
 import MenuBadge from './MenuBadge';
 import { UISref } from '@uirouter/react';
-import { dimVendorEngramsService, isVerified380 } from '../vendorEngramsXyzApi/vendorEngramsXyzService';
+import { AppIcon, menuIcon, searchIcon, settingsIcon } from './icons';
+import SearchFilter from '../search/SearchFilter';
+import { Subscriptions } from '../rx-utils';
+import { installPrompt$ } from '../../app-install';
 
 const destiny1Links = [
   {
@@ -55,80 +54,72 @@ const destiny2Links = [
   {
     state: 'destiny2.progress',
     text: 'Progress.Progress'
+  },
+  {
+    state: 'destiny2.vendors',
+    text: 'Vendors.Vendors'
+  },
+  {
+    state: 'destiny2.collections',
+    text: 'Vendors.Collections'
   }
 ];
 
-if ($featureFlags.vendors) {
-  destiny2Links.push({
-    state: 'destiny2.vendors',
-    text: 'Vendors.Vendors'
-  }, {
-    state: 'destiny2.collections',
-    text: 'Vendors.Collections'
+// conditionally add in the d2 loadout builder
+if ($featureFlags.d2LoadoutBuilder) {
+  destiny2Links.splice(1, 0, {
+    state: 'destiny2.loadoutbuilder',
+    text: 'LoadoutBuilder.Title'
   });
 }
+
+const shopLink = 'https://shop.destinyitemmanager.com/';
+const bugReport = 'https://github.com/DestinyItemManager/DIM/issues';
 
 interface State {
   account?: DestinyAccount;
   dropdownOpen: boolean;
   showSearch: boolean;
-  vendorEngramDropActive: boolean;
+  installPromptEvent?: any;
 }
 
-interface Props {
-  $rootScope: IRootScopeService;
-}
-
-export default class Header extends React.PureComponent<Props, State> {
-  private accountSubscription: Subscription;
+export default class Header extends React.PureComponent<{}, State> {
+  private subscriptions = new Subscriptions();
   // tslint:disable-next-line:ban-types
   private unregisterTransitionHooks: Function[] = [];
   private dropdownToggler = React.createRef<HTMLElement>();
 
-  private SearchFilter: React.ComponentClass<{ account: DestinyAccount }>;
-  private engramRefreshTimeout: number;
-
   constructor(props) {
     super(props);
 
-    this.SearchFilter = angular2react<{ account: DestinyAccount }>('dimSearchFilter', SearchFilterComponent);
-
     this.state = {
       dropdownOpen: false,
-      showSearch: false,
-      vendorEngramDropActive: false
+      showSearch: false
     };
   }
 
   componentDidMount() {
-    this.accountSubscription = getActiveAccountStream().subscribe((account) => {
-      this.setState({ account: account || undefined });
-      this.updateVendorEngrams();
-    });
+    this.subscriptions.add(
+      getActiveAccountStream().subscribe((account) => {
+        this.setState({ account: account || undefined });
+      }),
+      installPrompt$.subscribe((installPromptEvent) => this.setState({ installPromptEvent }))
+    );
 
     this.unregisterTransitionHooks = [
       router.transitionService.onBefore({}, () => {
         this.setState({ dropdownOpen: false });
       })
     ];
-
-    // Gonna have to figure out a better solution for this in React
-    this.props.$rootScope.$on('i18nextLanguageChange', () => {
-      this.setState({}); // gross, force re-render
-    });
   }
 
   componentWillUnmount() {
     this.unregisterTransitionHooks.forEach((f) => f());
-    this.accountSubscription.unsubscribe();
-    if (this.engramRefreshTimeout) {
-      clearTimeout(this.engramRefreshTimeout);
-    }
+    this.subscriptions.unsubscribe();
   }
 
   render() {
-    const { account, showSearch, dropdownOpen, vendorEngramDropActive } = this.state;
-    const { SearchFilter } = this;
+    const { account, showSearch, dropdownOpen, installPromptEvent } = this.state;
 
     // TODO: new fontawesome
     const bugReportLink = $DIM_FLAVOR !== 'release';
@@ -136,118 +127,109 @@ export default class Header extends React.PureComponent<Props, State> {
     // Generic links about DIM
     const dimLinks = (
       <>
-        <Link state='about' text='Header.About'/>
-        <Link state='support' text='Header.SupportDIM'/>
-        <ExternalLink href='https://teespring.com/stores/dim' text='Header.Shop'/>
+        <Link state="about" text="Header.About" />
+        <Link state="support" text="Header.SupportDIM" />
+        <ExternalLink href={shopLink} text="Header.Shop" />
         <WhatsNewLink />
-        {bugReportLink &&
-          <ExternalLink
-            href="https://github.com/DestinyItemManager/DIM/issues"
-            text="Header.ReportBug"
-          />}
+        {bugReportLink && <ExternalLink href={bugReport} text="Header.ReportBug" />}
       </>
     );
 
-    const links = account
-      ? account.destinyVersion === 1 ? destiny1Links : destiny2Links
-      : [];
+    const links = account ? (account.destinyVersion === 1 ? destiny1Links : destiny2Links) : [];
 
     // Links about the current Destiny version
     const destinyLinks = (
       <>
-        {links.map((link) =>
-          <Link
-            key={link.state}
-            account={account}
-            state={link.state}
-            text={link.text}
-          />
-        )}
+        {links.map((link) => (
+          <Link key={link.state} account={account} state={link.state} text={link.text} />
+        ))}
       </>
     );
 
     const reverseDestinyLinks = (
       <>
-        {links.slice().reverse().map((link) =>
-          <Link
-            key={link.state}
-            account={account}
-            state={link.state}
-            text={link.text}
-            showWhatsNew={link.state === 'destiny2.vendors' && vendorEngramDropActive}
-          />
-        )}
+        {links
+          .slice()
+          .reverse()
+          .map((link) => (
+            <Link key={link.state} account={account} state={link.state} text={link.text} />
+          ))}
       </>
     );
     const reverseDimLinks = (
       <>
-      {links.length > 0 && <span className="header-separator"/>}
-      {bugReportLink &&
-        <ExternalLink
-          href="https://github.com/DestinyItemManager/DIM/issues"
-          text="Header.ReportBug"
-        />}
+        {links.length > 0 && <span className="header-separator" />}
+        {bugReportLink && <ExternalLink href={bugReport} text="Header.ReportBug" />}
         <WhatsNewLink />
-        <ExternalLink href='https://teespring.com/stores/dim' text='Header.Shop'/>
-        <Link state='support' text='Header.SupportDIM'/>
-        <Link state='about' text='Header.About'/>
+        <ExternalLink href={shopLink} text="Header.Shop" />
+        <Link state="support" text="Header.SupportDIM" />
+        <Link state="about" text="Header.About" />
       </>
     );
 
     return (
-      <div id="header">
+      <div id="header" className={showSearch ? 'search-expanded' : ''}>
         <span className="menu link" ref={this.dropdownToggler} onClick={this.toggleDropdown}>
-          <i className="fa fa-bars" />
+          <AppIcon icon={menuIcon} />
           <MenuBadge />
         </span>
 
         <TransitionGroup>
-          {dropdownOpen &&
-            <CSSTransition
-              classNames="dropdown"
-              timeout={{ enter: 500, exit: 500 }}
-            >
+          {dropdownOpen && (
+            <CSSTransition classNames="dropdown" timeout={{ enter: 500, exit: 500 }}>
               <ClickOutside key="dropdown" className="dropdown" onClickOutside={this.hideDropdown}>
                 {destinyLinks}
-                {links.length > 0 && <hr/>}
-                <Link state='settings' text='Settings.Settings'/>
-                <hr/>
+                {links.length > 0 && <hr />}
+                <Link state="settings" text="Settings.Settings" />
+                {installPromptEvent && (
+                  <a className="link" onClick={this.installDim}>
+                    {t('Header.InstallDIM')}
+                  </a>
+                )}
+                <hr />
                 {dimLinks}
               </ClickOutside>
-            </CSSTransition>}
+            </CSSTransition>
+          )}
         </TransitionGroup>
 
-        <UISref to='default-account'>
-          <img
-            className={classNames('logo', 'link', $DIM_FLAVOR)}
-            title={`v${$DIM_VERSION} (${$DIM_FLAVOR})`}
-            src={logo}
-            alt="DIM"
-          />
-        </UISref>
+        {!showSearch && (
+          <UISref to="default-account">
+            <img
+              className={classNames('logo', 'link', $DIM_FLAVOR)}
+              title={`v${$DIM_VERSION} (${$DIM_FLAVOR})`}
+              src={logo}
+              alt="DIM"
+            />
+          </UISref>
+        )}
 
-        <div className="header-links">
-          {reverseDestinyLinks}
-          {reverseDimLinks}
-        </div>
+        {!showSearch && (
+          <div className="header-links">
+            {reverseDestinyLinks}
+            {reverseDimLinks}
+          </div>
+        )}
 
         <span className="header-right">
-          {!showSearch && <Refresh/>}
-          {(!showSearch && account && account.destinyVersion === 2 && settings.showReviews) &&
-            <RatingMode />}
-          {!showSearch &&
-            <UISref to='settings'>
-              <a
-                className="link fa fa-cog"
-                title={t('Settings.Settings')}
-              />
-            </UISref>}
-          {account &&
-            <span className={classNames("link", "search-link", { show: showSearch })}>
-              <SearchFilter account={account}/>
-            </span>}
+          {!showSearch && <Refresh />}
+          {!showSearch && account && account.destinyVersion === 2 && settings.showReviews && (
+            <RatingMode />
+          )}
+          {!showSearch && (
+            <UISref to="settings">
+              <a className="link" title={t('Settings.Settings')}>
+                <AppIcon icon={settingsIcon} />
+              </a>
+            </UISref>
+          )}
+          {account && (
+            <span className={classNames('link', 'search-link', { show: showSearch })}>
+              <SearchFilter />
+            </span>
+          )}
           <span className="link search-button" onClick={this.toggleSearch}>
-            <i className="fa fa-search"/>
+            <AppIcon icon={searchIcon} />
           </span>
           {account && <AccountSelect currentAccount={account} />}
         </span>
@@ -255,49 +237,38 @@ export default class Header extends React.PureComponent<Props, State> {
     );
   }
 
-  private updateVendorEngrams = () => {
-    if (!$featureFlags.vendorEngrams || !this.state.account || this.state.account.destinyVersion !== 2) {
-      return;
-    }
-
-    dimVendorEngramsService.getAllVendorDrops()
-      .then((vds) => {
-        if (!vds) {
-          return;
-        }
-
-        const anyActive = vds.some(isVerified380);
-
-        this.setState({ vendorEngramDropActive: anyActive });
-      });
-
-    this.engramRefreshTimeout = window.setInterval(this.updateVendorEngrams,
-      dimVendorEngramsService.refreshInterval);
-  }
-
   private toggleDropdown = () => {
     this.setState({ dropdownOpen: !this.state.dropdownOpen });
-  }
+  };
 
   private hideDropdown = (event) => {
     if (!this.dropdownToggler.current || !this.dropdownToggler.current.contains(event.target)) {
       this.setState({ dropdownOpen: false });
     }
-  }
+  };
 
   private toggleSearch = () => {
     this.setState({ showSearch: !this.state.showSearch });
-  }
+  };
+
+  private installDim = () => {
+    const deferredPrompt = this.state.installPromptEvent!;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+      if (choiceResult.outcome === 'accepted') {
+        console.log('User installed DIM to desktop/home screen');
+      } else {
+        console.log('User dismissed the install prompt');
+      }
+      installPrompt$.next(undefined);
+    });
+  };
 }
 
-function ExternalLink({
-  href,
-  text
-}: {
-  href: string;
-  text: string;
-}) {
+function ExternalLink({ href, text }: { href: string; text: string }) {
   return (
-    <a className="link" target="_blank" rel="noopener noreferrer" href={href}>{t(text)}</a>
+    <a className="link" target="_blank" rel="noopener noreferrer" href={href}>
+      {t(text)}
+    </a>
   );
 }

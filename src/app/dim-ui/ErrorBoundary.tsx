@@ -14,12 +14,12 @@ interface State {
 export default class ErrorBoundary extends React.Component<Props, State> {
   constructor(props) {
     super(props);
-    this.state = { };
+    this.state = {};
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, errorInfo) {
     this.setState({ error });
-    reportException(this.props.name, error);
+    reportException(this.props.name, error, errorInfo);
   }
 
   render() {

@@ -11,6 +11,10 @@
     }
   }
 
+  > .title {
+    margin-bottom: 10px;
+  }
+
   .record-book {
     margin-bottom: 10px;
   }
@@ -27,13 +31,15 @@
     margin: 8px 0 0 0;
     padding: 8px;
 
-    .record-book-page-title {
+    .title {
       margin: 0;
       font-size: 14px;
       letter-spacing: 1px;
       text-transform: uppercase;
-      display: inline;
       margin-left: 2px;
+      background: transparent;
+      padding: 0 4px;
+      min-height: 0;
     }
 
     p {
@@ -73,7 +79,7 @@
 
     h3 {
       margin: 0;
-      font-size: 16px;
+      font-size: 14px;
       letter-spacing: 1px;
       font-weight: normal;
     }
@@ -82,11 +88,11 @@
       margin: 0 0 8px 0;
       color: #e0e0e0;
     }
-
   }
 
   &.hide-complete {
-    .record, .record-book-page {
+    .record,
+    .record-book-page {
       &.complete {
         display: none;
       }
@@ -104,14 +110,14 @@
     background-position: 50%;
     background-repeat: no-repeat;
     background-size: 75%;
-    width: 60px;
-    height: 60px;
+    width: 40px;
+    height: 40px;
     flex-shrink: 0;
     border: 2px solid #fff;
   }
 
   .complete .record-icon {
     border-color: #ffce1f;
-    background-color: rgba(255,206,31,0.4);
+    background-color: rgba(255, 206, 31, 0.4);
   }
 }

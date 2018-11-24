@@ -1,7 +1,7 @@
-import * as _ from 'underscore';
+import * as _ from 'lodash';
 import { getActivePlatform } from '../accounts/platform.service';
 import { D2ReviewDataCache } from './d2-reviewDataCache';
-import { loadingTracker } from '../ngimport-more';
+import { loadingTracker } from '../shell/loading-tracker';
 import { handleD2Errors } from './d2-trackerErrorHandler';
 import { D2Item } from '../inventory/item-types';
 import { dtrFetch } from './dtr-service-helper';
@@ -20,7 +20,11 @@ class D2ReviewsFetcher {
     this._reviewDataCache = reviewDataCache;
   }
 
-  _getItemReviewsPromise(item, platformSelection: number, mode: number): Promise<D2ItemReviewResponse> {
+  _getItemReviewsPromise(
+    item,
+    platformSelection: number,
+    mode: number
+  ): Promise<D2ItemReviewResponse> {
     const dtrItem = getRollAndPerks(item);
 
     const queryString = `page=1&platform=${platformSelection}&mode=${mode}`;
@@ -68,7 +72,7 @@ class D2ReviewsFetcher {
   _attachReviews(item: D2Item, reviewData: D2ItemReviewResponse) {
     this._sortAndIgnoreReviews(reviewData);
 
-    this._reviewDataCache.addReviewsData(reviewData);
+    this._reviewDataCache.addReviewsData(item, reviewData);
     item.dtrRating = this._reviewDataCache.getRatingData(item);
 
     ratePerks(item);
@@ -119,17 +123,21 @@ class D2ReviewsFetcher {
       item.dtrRating = cachedData;
     }
     if (cachedData && cachedData.reviewsResponse) {
+      ratePerks(item);
       return;
     }
 
-    return this._getItemReviewsPromise(item, platformSelection, mode)
-      .then((reviewData) => {
-        this._markUserReview(reviewData);
-        this._attachReviews(item, reviewData);
-      });
+    return this._getItemReviewsPromise(item, platformSelection, mode).then((reviewData) => {
+      this._markUserReview(reviewData);
+      this._attachReviews(item, reviewData);
+    });
   }
 
-  fetchItemReviews(itemHash: number, platformSelection: number, mode: number): Promise<D2ItemReviewResponse> {
+  fetchItemReviews(
+    itemHash: number,
+    platformSelection: number,
+    mode: number
+  ): Promise<D2ItemReviewResponse> {
     const cachedData = this._reviewDataCache.getRatingData(undefined, itemHash);
 
     if (cachedData && cachedData.reviewsResponse) {

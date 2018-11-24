@@ -1,5 +1,9 @@
 @import '../../scss/variables.scss';
 
+.d1-vendors {
+  margin-top: 1em;
+}
+
 .vendor {
   padding: 0 1em;
 
@@ -39,14 +43,11 @@
   }
 
   .xyz-active-throb {
-    width: 30px;
-    height: 30px;
     border-radius: 100px;
-    margin-right: 20px;
     animation: glow 1s infinite alternate;
   }
 
-  .xyz-inactive {
+  .xyz-engram {
     width: 30px;
     height: 30px;
     margin-right: 20px;
@@ -69,26 +70,25 @@
     flex-wrap: wrap;
   }
   .vendor-item {
-    margin-right: 1px;
-    margin-bottom: 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
     position: relative;
+
+    &.unavailable .item {
+      opacity: 0.5;
+    }
   }
   .category-title {
     margin-top: 10px;
     margin-left: 2px;
     text-transform: uppercase;
     font-size: 12px;
-    color: #CCC;
+    color: #ccc;
     margin-bottom: 4px;
     &:first-child {
       margin-top: 0px;
     }
-  }
-  .fa-arrow-circle-left {
-    padding-right: 5px;
   }
   .vendor-headers-background {
     position: fixed;
@@ -106,7 +106,7 @@
     z-index: 4;
   }
   .vendorHeaderWrapper {
-    position:fixed;
+    position: fixed;
     top: $header-height;
     max-width: 900px;
     width: 100%;
@@ -118,10 +118,6 @@
   }
   .vendor-headers {
     display: flex;
-  }
-  .collapse-handle {
-    display: flex;
-    align-items: center;
   }
   .title {
     .countdown {
@@ -139,8 +135,7 @@
     flex: 1;
   }
   .vendor-row {
-    margin-bottom: 10px;
-    margin-top: 10px;
+    margin-bottom: 4px;
   }
   .vendor-category {
     margin-bottom: 8px;
@@ -153,7 +148,8 @@
   .vendor-icon {
     width: 30px;
     height: 30px;
-    margin: 5px 10px 5px 5px;
+    margin: 5px;
+    vertical-align: middle;
   }
   .currency img {
     height: 12px;
@@ -161,7 +157,8 @@
     margin-left: 4px;
   }
   .vendor-costs {
-    margin-top: -1px;
+    margin-top: -4px;
+    margin-bottom: 4px;
   }
   .cost {
     font-size: 10px;
@@ -172,7 +169,7 @@
     height: 18px;
   }
   .notenough {
-    color: #CC5C58;
+    color: #cc5c58;
   }
   .modal-open {
     overflow: visible;
@@ -193,19 +190,6 @@
   }
 }
 
-.locked-overlay {
-  width: calc(var(--item-size) + 4px);
-  height: calc(var(--item-size) + 4px);
-  position: absolute;
-  top: 0;
-  left: 2px;
-  pointer-events: none;
-  z-index: 1;
-  background-color: rgba(40,40,40,0.6);
-  margin-top: 2px;
-  backface-visibility: hidden;
-}
-
 .ngdialog.vendor-move-popup {
   position: absolute;
   height: fit-content;
@@ -221,7 +205,7 @@
     opacity: 0.5;
   }
   .selected {
-    opacity: 1.0;
+    opacity: 1;
   }
   a {
     outline: 0;
@@ -232,15 +216,18 @@
   float: right;
 }
 
-vendor-currencies, .vendor-currencies {
+vendor-currencies,
+.vendor-currencies {
   font-size: 12px;
-  float: right;
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 4px;
   .vendor-currency {
-    margin-right: 10px;
-    &:last-child {
-      margin-right: 0;
+    margin-left: 10px;
+    &:first-child {
+      margin-left: 0;
     }
     img {
       vertical-align: bottom;

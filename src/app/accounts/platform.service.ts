@@ -1,13 +1,19 @@
-import { IPromise } from 'angular';
-import { $q, $rootScope } from 'ngimport';
 import { ConnectableObservable } from 'rxjs/observable/ConnectableObservable';
 import { Subject } from 'rxjs/Subject';
-import * as _ from 'underscore';
-import { compareAccounts, DestinyAccount, getDestinyAccountsForBungieAccount } from './destiny-account.service';
+import * as _ from 'lodash';
+import {
+  compareAccounts,
+  DestinyAccount,
+  getDestinyAccountsForBungieAccount
+} from './destiny-account.service';
 import '../rx-operators';
-import { settings } from '../settings/settings';
 import { SyncService } from '../storage/sync.service';
-import { getBungieAccounts } from './bungie-account.service';
+import { getBungieAccount } from './bungie-account.service';
+import * as actions from './actions';
+import store from '../store/store';
+import { loadingTracker } from '../shell/loading-tracker';
+import { update } from '../inventory/actions';
+import { goToLoginPage } from '../oauth/http-refresh-token.service';
 
 let _platforms: DestinyAccount[] = [];
 let _active: DestinyAccount | null = null;
@@ -25,39 +31,45 @@ export function getPlatformMatching(params: Partial<DestinyAccount>): DestinyAcc
 }
 
 // TODO: return a list of bungie accounts and associated destiny accounts?
-export function getPlatforms(): IPromise<DestinyAccount[]> {
+export async function getPlatforms(): Promise<DestinyAccount[]> {
   if (_platforms.length) {
-    return $q.resolve(_platforms);
+    return _platforms;
   }
 
   // TODO: wire this up with observables?
-  return getBungieAccounts()
-    .then((bungieAccounts) => {
-      if (!bungieAccounts.length) {
-        // We're not logged in, don't bother
-        $rootScope.$broadcast('dim-no-token-found');
-        return [];
-      }
+  const bungieAccount = getBungieAccount();
+  if (!bungieAccount) {
+    // We're not logged in, don't bother
+    goToLoginPage();
+    return [];
+  }
 
-      // We only support one account now
-      const membershipId = bungieAccounts[0].membershipId;
-      return getDestinyAccountsForBungieAccount(membershipId);
-    })
-    .then((destinyAccounts: DestinyAccount[]) => {
-      _platforms = destinyAccounts;
-      return loadActivePlatform();
-    })
-    .then(setActivePlatform)
-    .then(() => _platforms);
+  const membershipId = bungieAccount.membershipId;
+  const promise = loadPlatforms(membershipId);
+  loadingTracker.addPromise(promise);
+  return promise;
+}
+
+async function loadPlatforms(membershipId: string) {
+  const destinyAccounts = await getDestinyAccountsForBungieAccount(membershipId);
+  _platforms = destinyAccounts;
+  store.dispatch(actions.accountsLoaded(destinyAccounts));
+  const platform = await loadActivePlatform();
+  await setActivePlatform(platform);
+  return _platforms;
 }
 
 export function getActivePlatform(): DestinyAccount | null {
   return _active;
 }
 
-export function setActivePlatform(platform: DestinyAccount) {
-  activePlatform$.next(platform);
-  return current$.take(1).toPromise();
+export function setActivePlatform(platform: DestinyAccount | null) {
+  if (platform) {
+    activePlatform$.next(platform);
+    return current$.take(1).toPromise();
+  } else {
+    return Promise.resolve(null);
+  }
 }
 
 export function getActiveAccountStream() {
@@ -80,7 +92,10 @@ async function loadActivePlatform(): Promise<DestinyAccount | null> {
     return _active;
   } else if (data && data.platformType) {
     let active = _platforms.find((platform) => {
-      return platform.platformType === data.platformType && platform.destinyVersion === data.destinyVersion;
+      return (
+        platform.platformType === data.platformType &&
+        platform.destinyVersion === data.destinyVersion
+      );
     });
     if (active) {
       return active;
@@ -99,10 +114,14 @@ function saveActivePlatform(account: DestinyAccount | null): Promise<void> {
   if (account === null) {
     return SyncService.remove('platformType');
   } else {
-    if (settings.destinyVersion !== account.destinyVersion) {
-      settings.destinyVersion = account.destinyVersion;
-      settings.save();
-    }
-    return SyncService.set({ platformType: account.platformType, destinyVersion: account.destinyVersion });
+    // TODO: Starting to look like a saga
+    store.dispatch(actions.setCurrentAccount(account));
+    // Also clear inventory
+    store.dispatch(update({ stores: [] }));
+
+    return SyncService.set({
+      platformType: account.platformType,
+      destinyVersion: account.destinyVersion
+    });
   }
 }

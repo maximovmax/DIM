@@ -7,7 +7,8 @@ import {
   DestinySocketCategoryDefinition,
   DestinyClass,
   DestinyItemTierTypeInfusionBlock,
-  DestinyItemQualityBlockDefinition
+  DestinyItemQualityBlockDefinition,
+  DestinyAmmunitionType
 } from 'bungie-api-ts/destiny2';
 import { DimItemInfo } from './dim-item-info';
 import { DimStore, StoreServiceType, D1StoreServiceType, D2StoreServiceType } from './store-types';
@@ -34,8 +35,8 @@ export interface DimItem {
   hash: number;
   /** This is the type of the item (see InventoryBuckets) regardless of location. This string is a DIM concept with no direct correlation to the API types. */
   type: string;
-  /** String names of "item categories" the item may be in. These are not the same as DestinyItemCategoryDefinitions. */
-  categories: string[];
+  /** Hashes of DestinyItemCategoryDefinitions this item belongs to */
+  itemCategoryHashes: number[];
   /** A readable English name for the rarity of the item (e.g. "Exotic", "Rare"). */
   tier: string;
   /** Is this an Exotic item? */
@@ -75,13 +76,19 @@ export interface DimItem {
   /** How many items does this represent? Only greater than one if maxStackSize is greater than one. */
   amount: number;
   /** The primary stat (Attack, Defense, Speed) of the item. */
-  primStat: DestinyStat | null;
+  primStat:
+    | DestinyStat & {
+        stat: DestinyStatDefinition & { statName: string };
+      }
+    | null;
   /** Localized name of this item's type. */
   typeName: string;
   /** The level a character must be to equip this item. */
   equipRequiredLevel: number;
   /** The maximum number of items that stack together for this item type. */
   maxStackSize: number;
+  /** Is this stack unique (one per account, sometimes two if you can move to vault)? */
+  uniqueStack: boolean;
   /** The class this item is restricted to. Unknown means it can be used by any class. */
   classType: DestinyClass;
   /** The readable English name of the class this item is restricted to. */
@@ -89,9 +96,7 @@ export interface DimItem {
   /** The localized name of the class this item is restricted to. */
   classTypeNameLocalized: string;
   /** The readable name of the damage type associated with this item. */
-  dmg: 'kinetic' | 'arc' | 'solar' | 'void';
-  /** Whether this item should be shown. */
-  visible: boolean;
+  dmg: 'kinetic' | 'arc' | 'solar' | 'void' | 'heroic';
   /** Whether this item can be locked. */
   lockable: boolean;
   /** Is this item tracked? (D1 quests/bounties). */
@@ -112,9 +117,11 @@ export interface DimItem {
   comparable: boolean;
   /** Can this be reviewed? */
   reviewable: boolean;
-  /** Is this a new item? */
-  isNew: boolean;
-  /** DIM tagging and notes info. */
+  /**
+   * DIM tagging and notes info.
+   *
+   * @deprecated this must not be used when rendering items in React.
+   */
   dimInfo: DimItemInfo;
   /** The "base power" without any power-enhancing mods. */
   basePower: number;
@@ -139,13 +146,15 @@ export interface DimItem {
   /** A timestamp of when, in this session, the item was last manually moved */
   lastManuallyMoved: number;
 
-  /** Information about community ratings. */
+  /**
+   * Information about community ratings.
+   *
+   * @deprecated this must not be used when rendering items in React.
+   */
   dtrRating: DtrRating | null;
 
   /** Can this item be equipped by the given store? */
   canBeEquippedBy(store: DimStore): boolean;
-  /** Is this item in the given category name? Only really useful in D1. */
-  inCategory(categoryName: string): boolean;
   /** Could this be added to a loadout? */
   canBeInLoadout(): boolean;
   /** "Touch" the item to mark it as having been manually moved. */
@@ -190,7 +199,6 @@ export interface D1Item extends DimItem {
  * A Destiny 2 item. Use this type when you need specific D2 properties.
  */
 export interface D2Item extends DimItem {
-  primStat: D2PrimStat | null;
   /** D2 items use sockets and plugs to represent everything from perks to mods to ornaments and shaders. */
   sockets: DimSockets | null;
   /** Some items have a "flavor objective", such as emblems that track stats. */
@@ -204,14 +212,18 @@ export interface D2Item extends DimItem {
   /** The DestinyVendorDefinition hash of the vendor that can preview the contents of this item, if there is one. */
   previewVendor?: number;
   dtrRating: D2RatingData | null;
+  ammoType: DestinyAmmunitionType;
+  season: number;
+  event: number | null;
+  source: number[];
   getStoresService(): D2StoreServiceType;
 }
 
-export interface D2PrimStat extends DestinyStat {
-  stat: DestinyStatDefinition & { statName: string };
-}
 export interface D1PrimStat extends DestinyStat {
-  stat: any;
+  stat: DestinyStatDefinition & {
+    statName: string;
+    statIdentifier: string;
+  };
 }
 
 export interface DimMasterwork {
@@ -232,9 +244,9 @@ export interface DimMasterwork {
 }
 
 export interface DimStat {
-  /** Base stat without "increase defense", etc. Bonuses applied. */
+  /** Base stat without bonuses/mods/plugs applied. */
   base: number;
-  /** Stat bonus from leveling this item. A D1 thing. */
+  /** Stat bonus total `value - base = bonus` */
   bonus: number;
   /** DestinyStatDefinition hash. */
   statHash: number;
@@ -252,6 +264,12 @@ export interface DimStat {
   bar: boolean;
   /** Is this a placeholder for a "missing" stat (for compare view) */
   missingStat?: boolean;
+  /** Stat bonus from plugs */
+  plugBonus?: number;
+  /** Stat bonus from mods */
+  modsBonus?: number;
+  /** Stat bonus from perks */
+  perkBonus?: number;
 }
 
 export interface D1Stat extends DimStat {
@@ -395,6 +413,8 @@ export interface DimSocket {
   plug: DimPlug | null;
   /** Potential plugs for this socket. */
   plugOptions: DimPlug[];
+  /** Does the socket contain randomized plug items? */
+  hasRandomizedPlugItems: boolean;
 }
 
 export interface DimSocketCategory {

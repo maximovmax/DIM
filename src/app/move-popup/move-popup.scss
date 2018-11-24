@@ -18,7 +18,7 @@
     border-color: #222;
   }
 
-  &[x-placement^="top"] .arrow {
+  &[x-placement^='top'] .arrow {
     border-width: 5px 5px 0 5px;
     border-left-color: transparent;
     border-right-color: transparent;
@@ -29,7 +29,7 @@
     margin-bottom: 0;
   }
 
-  &[x-placement^="bottom"] .arrow {
+  &[x-placement^='bottom'] .arrow {
     border-width: 0 5px 5px 5px;
     border-left-color: transparent;
     border-right-color: transparent;
@@ -41,17 +41,23 @@
 
     border-bottom-color: white;
 
-    &.is-arc {
-      border-bottom-color: $arc;
+    &.is-Exotic {
+      border-bottom-color: $exotic;
     }
-    &.is-solar {
-      border-bottom-color: $solar;
+    &.is-Legendary {
+      border-bottom-color: $legendary;
     }
-    &.is-void {
-      border-bottom-color: $void;
+    &.is-Rare {
+      border-bottom-color: $rare;
+    }
+    &.is-Uncommon {
+      border-bottom-color: $uncommon;
+    }
+    &.is-Common {
+      border-bottom-color: $common;
     }
   }
-  &[x-placement^="right"] .arrow {
+  &[x-placement^='right'] .arrow {
     border-width: 5px 5px 5px 0;
     border-left-color: transparent;
     border-top-color: transparent;
@@ -61,7 +67,7 @@
     margin-left: 0;
     margin-right: 0;
   }
-  &[x-placement^="left"] .arrow {
+  &[x-placement^='left'] .arrow {
     border-width: 5px 0 5px 5px;
     border-top-color: transparent;
     border-right-color: transparent;
@@ -81,7 +87,7 @@
   justify-content: space-around;
 }
 .move-popup-tab {
-  opacity: .8;
+  opacity: 0.8;
   padding: 5px 0 3px;
   cursor: pointer;
   width: 100%;
@@ -102,7 +108,7 @@
   min-height: 77px;
   width: 320px;
   height: fit-content;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, .8);
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.8);
 
   .interaction {
     display: flex;
@@ -165,26 +171,25 @@ $item-header-spacing: 5px;
     }
   }
 
-  .item-title-link {
-    color: #000;
-    letter-spacing: 1px;
-  }
-
   .item-review-average {
     margin-left: 1rem;
   }
 
-  .item-subtitle, .item-title-container {
+  .item-subtitle,
+  .item-title-container {
     display: flex;
     flex-direction: row;
     align-items: center;
   }
 
-  .item-type-info, .item-title-link {
+  .item-type-info,
+  .item-title-link {
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
   }
 
   .fa {
@@ -201,9 +206,39 @@ $item-header-spacing: 5px;
     background-color: $void;
   }
 
+  &.is-Common {
+    background-color: $common;
+  }
+  &.is-Uncommon {
+    background-color: $uncommon;
+  }
+  &.is-Rare {
+    background-color: $rare;
+  }
+  &.is-Legendary {
+    background-color: $legendary;
+  }
+  &.is-Exotic {
+    background-color: $exotic;
+  }
+  &.is-Uncommon,
+  &.is-Rare,
+  &.is-Legendary {
+    color: #bbb;
+    select,
+    .item-title {
+      color: #ddd;
+    }
+  }
+
   .item-title {
     color: #000;
     font-size: 1rem;
+    text-decoration: none;
+    letter-spacing: 0;
+    @include destiny-header;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .icon {
     display: inline-block;
@@ -216,24 +251,24 @@ $item-header-spacing: 5px;
     font-size: 1rem;
 
     &.is-locking {
-      opacity: .5;
+      opacity: 0.5;
     }
   }
   .element {
     display: inline-block;
-    filter: brightness(0%);
     height: 1rem;
     vertical-align: top;
     width: 1rem;
     background-size: contain;
     &.void {
-      background-image: url('../../images/void.png');
+      background-image: url(https://www.bungie.net/img/destiny_content/damage_types/destiny2/void.png);
+      filter: brightness(200%);
     }
     &.arc {
-      background-image: url('../../images/arc.png');
+      background-image: url(https://www.bungie.net/img/destiny_content/damage_types/destiny2/arc.png);
     }
     &.solar {
-      background-image: url('../../images/solar.png');
+      background-image: url(https://www.bungie.net/img/destiny_content/damage_types/destiny2/thermal.png);
     }
   }
   .info {
@@ -307,4 +342,28 @@ $item-header-spacing: 5px;
   background-color: #923c3c;
   margin: 0;
   padding: 2px 8px;
+}
+
+.ammo-type {
+  $ammo-height: 10px;
+  background-size: (1.4 * $ammo-height) $ammo-height;
+  height: $ammo-height + 4px;
+  width: (1.4 * $ammo-height) + 4px;
+  margin-right: 4px;
+  background-color: rgba(0, 0, 0, 0.7);
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 5px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.ammo-primary {
+  background-image: url('../../images/primary.png');
+}
+.ammo-special {
+  background-image: url('../../images/special.png');
+}
+.ammo-heavy {
+  background-image: url('../../images/heavy.png');
 }

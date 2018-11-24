@@ -1,11 +1,13 @@
-import { extend, copy, IComponentOptions, IController, IQService } from 'angular';
-import * as _ from 'underscore';
-import { flatMap } from '../util';
+import { IComponentOptions, IController, IQService } from 'angular';
+import copy from 'fast-copy';
+import * as _ from 'lodash';
 import { getDefinitions } from '../destiny1/d1-definitions.service';
 import template from './infuse.html';
 import './infuse.scss';
-import { Loadout, dimLoadoutService } from '../loadout/loadout.service';
+import { dimLoadoutService } from '../loadout/loadout.service';
 import { DimItem } from '../inventory/item-types';
+import { chainComparator, compareBy, reverseComparator } from '../comparators';
+import { newLoadout } from '../loadout/loadout-utils';
 
 export const InfuseComponent: IComponentOptions = {
   template,
@@ -19,6 +21,8 @@ export const InfuseComponent: IComponentOptions = {
 function InfuseCtrl(
   this: IController & {
     query: DimItem;
+    source: DimItem | null;
+    target: DimItem | null;
   },
   $scope,
   toaster,
@@ -29,7 +33,7 @@ function InfuseCtrl(
 
   const vm = this;
 
-  extend(vm, {
+  Object.assign(vm, {
     items: {},
     getAllItems: true,
     showLockedItems: false,
@@ -38,6 +42,8 @@ function InfuseCtrl(
     infused: 0,
     sourceItems: [],
     targetItems: [],
+    sourceItemDupes: [],
+    targetItemDupes: [],
     transferInProgress: false,
 
     $onInit() {
@@ -47,14 +53,7 @@ function InfuseCtrl(
 
       if (vm.query.destinyVersion === 1) {
         getDefinitions().then((defs) => {
-          [
-            452597397,
-            2534352370,
-            3159615086,
-            937555249,
-            1898539128,
-            1542293174
-          ].forEach((hash) => {
+          [452597397, 2534352370, 3159615086, 937555249, 1898539128, 1542293174].forEach((hash) => {
             vm.items[hash] = defs.InventoryItem.get(hash);
           });
         });
@@ -73,28 +72,14 @@ function InfuseCtrl(
       vm.source = source;
       vm.target = target;
 
-      vm.infused = vm.target.primStat.value;
+      vm.infused = target.primStat.value;
 
       if (vm.source!.destinyVersion === 2) {
-        /*
-        // Rules taken from https://bungie-net.github.io/multi/schema_Destiny-Definitions-Items-DestinyItemTierTypeInfusionBlock.html#schema_Destiny-Definitions-Items-DestinyItemTierTypeInfusionBlock
-        const sourceBasePower = vm.source.basePower;
-        const targetBasePower = vm.target.basePower;
-        const powerDiff = Math.max(0, targetBasePower - sourceBasePower);
-        const quality = vm.target.infusionProcess;
-        const transferAmount = powerDiff * quality.baseQualityTransferRatio;
-        const increase = Math.min(powerDiff, Math.max(transferAmount, quality.minimumQualityIncrement));
-        vm.infused = vm.source.primStat.value + increase;
-        */
-
-        // Folks report that that formula isn't really what's used,
-        // and that you just always get the full value.
-        // https://github.com/DestinyItemManager/DIM/issues/2215
-        vm.infused = vm.target.basePower + (vm.source.primStat.value - vm.source.basePower);
-      } else if (vm.source.bucket.sort === 'General') {
+        vm.infused = target.basePower + (source.primStat.value - source.basePower);
+      } else if (source.bucket.sort === 'General') {
         vm.wildcardMaterialCost = 2;
         vm.wildcardMaterialHash = 937555249;
-      } else if (vm.source.primStat.stat.statIdentifier === 'STAT_DAMAGE') {
+      } else if (source.primStat.stat.statIdentifier === 'STAT_DAMAGE') {
         vm.wildcardMaterialCost = 10;
         vm.wildcardMaterialHash = 1898539128;
       } else {
@@ -118,32 +103,37 @@ function InfuseCtrl(
       }
 
       if (vm.query.infusable) {
-        let targetItems = flatMap(stores, (store) => {
-          return _.filter(store.items, (item) => {
+        let targetItems = _.flatMap(stores, (store) => {
+          return store.items.filter((item) => {
             return (!item.locked || vm.showLockedItems) && vm.isInfusable(vm.query, item);
           });
         });
+        targetItems = targetItems.sort(this.itemComparator);
 
-        targetItems = _.sortBy(targetItems, vm.itemToSortKey);
-
-        vm.targetItems = targetItems;
+        vm.targetItemDupes = targetItems.filter((item) => item.hash === vm.query.hash);
+        vm.targetItems = targetItems.filter((item) => item.hash !== vm.query.hash);
       }
 
-      let sourceItems = flatMap(stores, (store) => {
-        return _.filter(store.items, (item) => {
-          return (!item.locked || vm.showLockedItems) && vm.isInfusable(item, vm.query);
+      if (vm.query.infusionFuel) {
+        let sourceItems = _.flatMap(stores, (store) => {
+          return store.items.filter((item) => {
+            return vm.isInfusable(item, vm.query);
+          });
         });
-      });
+        sourceItems = sourceItems.sort(this.itemComparator);
 
-      sourceItems = _.sortBy(sourceItems, vm.itemToSortKey);
-
-      vm.sourceItems = sourceItems;
+        vm.sourceItemDupes = sourceItems.filter((item) => item.hash === vm.query.hash);
+        vm.sourceItems = sourceItems.filter((item) => item.hash !== vm.query.hash);
+      }
 
       vm.target = null;
       vm.infused = 0;
     },
 
-    isInfusable(source, target) {
+    /**
+     * Can source be infused into target?
+     */
+    isInfusable(source: DimItem, target: DimItem) {
       if (!source.infusable || !target.infusionFuel) {
         return false;
       }
@@ -152,51 +142,61 @@ function InfuseCtrl(
         return false;
       }
 
-      if (source.destinyVersion === 1) {
-        return (source.type === target.type) && (source.primStat.value < target.primStat.value);
-      }
-
-      if (source.destinyVersion === 2) {
-        return source.infusionQuality && target.infusionQuality &&
-               (source.infusionQuality.infusionCategoryHashes.some((h) => target.infusionQuality.infusionCategoryHashes.includes(h))) &&
-               (source.basePower < target.basePower);
+      if (source.isDestiny1()) {
+        return source.type === target.type && source.primStat!.value < target.primStat!.value;
+      } else if (source.isDestiny2() && target.isDestiny2()) {
+        return (
+          source.infusionQuality &&
+          target.infusionQuality &&
+          source.infusionQuality.infusionCategoryHashes.some((h) =>
+            target.infusionQuality!.infusionCategoryHashes.includes(h)
+          ) &&
+          source.basePower < target.basePower
+        );
       }
 
       // Don't try to apply logic for unknown Destiny versions.
       return false;
     },
 
-    itemToSortKey(item) {
-      return -((item.basePower || item.primStat.value) +
-      (item.talentGrid ? ((item.talentGrid.totalXP / item.talentGrid.totalXPRequired) * 0.5) : 0));
-    },
+    itemComparator: chainComparator(
+      reverseComparator(compareBy((item: DimItem) => item.basePower)),
+      reverseComparator(compareBy((item: DimItem) => item.primStat!.value)),
+      compareBy((item: DimItem) =>
+        item.isDestiny1() && item.talentGrid
+          ? (item.talentGrid.totalXP / item.talentGrid.totalXPRequired) * 0.5
+          : 0
+      )
+    ),
 
     closeDialog() {
       $scope.$parent.closeThisDialog();
     },
 
     transferItems() {
-      if (vm.target.notransfer || vm.source.notransfer) {
-        const name = vm.source.notransfer ? vm.source.name : vm.target.name;
+      const target = vm.target!;
+      const source = vm.source!;
+      if (target.notransfer || source.notransfer) {
+        const name = source.notransfer ? source.name : target.name;
 
         toaster.pop('error', $i18next.t('Infusion.NoTransfer', { target: name }));
         return $q.resolve();
       }
 
-      const store = vm.source.getStoresService().getStore(vm.query.owner)!;
+      const store = source.getStoresService().getActiveStore()!;
       const items: { [key: string]: any[] } = {};
-      const targetKey = vm.target.type.toLowerCase();
+      const targetKey = target.type.toLowerCase();
       items[targetKey] = items[targetKey] || [];
-      const itemCopy = copy(vm.target);
+      const itemCopy = copy(target);
       itemCopy.equipped = false;
       items[targetKey].push(itemCopy);
       // Include the source, since we wouldn't want it to get moved out of the way
-      const sourceKey = vm.source.type.toLowerCase();
+      const sourceKey = source.type.toLowerCase();
       items[sourceKey] = items[sourceKey] || [];
-      items[sourceKey].push(vm.source);
+      items[sourceKey].push(source);
 
       items.material = [];
-      if (vm.target.bucket.sort === 'General') {
+      if (target.bucket.sort === 'General') {
         // Mote of Light
         items.material.push({
           id: '0',
@@ -204,7 +204,7 @@ function InfuseCtrl(
           amount: 2,
           equipped: false
         });
-      } else if (vm.source.primStat.stat.statIdentifier === 'STAT_DAMAGE') {
+      } else if (source.isDestiny1() && source.primStat!.stat.statIdentifier === 'STAT_DAMAGE') {
         // Weapon Parts
         items.material.push({
           id: '0',
@@ -221,7 +221,7 @@ function InfuseCtrl(
           equipped: false
         });
       }
-      if (vm.source.isExotic) {
+      if (source.isExotic) {
         // Exotic shard
         items.material.push({
           id: '0',
@@ -231,11 +231,7 @@ function InfuseCtrl(
         });
       }
 
-      const loadout: Loadout = {
-        classType: -1,
-        name: $i18next.t('Infusion.InfusionMaterials'),
-        items
-      };
+      const loadout = newLoadout($i18next.t('Infusion.InfusionMaterials'), items);
 
       vm.transferInProgress = true;
       return dimLoadoutService.applyLoadout(store, loadout).then(() => {

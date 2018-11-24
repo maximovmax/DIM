@@ -1,10 +1,10 @@
-import { ReactStateDeclaration } from "@uirouter/react";
-import { angular2react } from "angular2react";
-import { lazyInjector } from "../../lazyInjector";
-import { VendorsComponent } from "./vendors.component";
+import { ReactStateDeclaration } from '@uirouter/react';
+import D1Vendors from './D1Vendors';
 
-export const states: ReactStateDeclaration[] = [{
-  name: 'destiny1.vendors',
-  component: angular2react('dimVendors', VendorsComponent, lazyInjector.$injector as angular.auto.IInjectorService),
-  url: '/vendors'
-}];
+export const states: ReactStateDeclaration[] = [
+  {
+    name: 'destiny1.vendors',
+    component: D1Vendors,
+    url: '/vendors'
+  }
+];

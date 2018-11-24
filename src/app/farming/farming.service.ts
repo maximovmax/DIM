@@ -1,15 +1,15 @@
-import { copy } from 'angular';
-import { settings as dimSettings } from '../settings/settings';
-import * as _ from 'underscore';
-import { sum } from '../util';
-import { getBuckets } from '../destiny1/d1-buckets.service';
+import copy from 'fast-copy';
+import { settings } from '../settings/settings';
+import * as _ from 'lodash';
 import { MoveReservations, dimItemService } from '../inventory/dimItemService.factory';
 import { D1Item, DimItem } from '../inventory/item-types';
 import { D1StoresService } from '../inventory/d1-stores.service';
 import { t } from 'i18next';
 import { toaster } from '../ngimport-more';
-import { $q, $interval, $rootScope } from 'ngimport';
+import { $q, $interval } from 'ngimport';
 import { DestinyAccount } from '../accounts/destiny-account.service';
+import { getBuckets } from '../destiny1/d1-buckets.service';
+import { refresh } from '../shell/refresh';
 
 export const D1FarmingService = FarmingService();
 
@@ -43,12 +43,12 @@ function FarmingService() {
     'BUCKET_MATERIALS'
   ];
 
-  const settings = dimSettings.farming;
-
   const outOfSpaceWarning = _.throttle((store) => {
-    toaster.pop('info',
-                t('FarmingMode.OutOfRoomTitle'),
-                t('FarmingMode.OutOfRoom', { character: store.name }));
+    toaster.pop(
+      'info',
+      t('FarmingMode.OutOfRoomTitle'),
+      t('FarmingMode.OutOfRoom', { character: store.name })
+    );
   }, 60000);
 
   return {
@@ -61,7 +61,7 @@ function FarmingService() {
     moveItemsToVault(items: D1Item[], incrementCounter: boolean) {
       return getBuckets().then((buckets) => {
         const reservations: MoveReservations = {};
-        if (settings.makeRoomForItems) {
+        if (settings.farming.makeRoomForItems) {
           // reserve one space in the active character
           reservations[this.store.id] = {};
           makeRoomTypes.forEach((type) => {
@@ -69,52 +69,85 @@ function FarmingService() {
           });
         }
 
-        return _.reduce(items, (promise, item) => {
-          // Move a single item. We do this as a chain of promises so we can reevaluate the situation after each move.
-          return promise
-            .then(() => {
-              const vault = D1StoresService.getVault()!;
-              const vaultSpaceLeft = vault.spaceLeftForItem(item);
-              if (vaultSpaceLeft <= 1) {
-                // If we're down to one space, try putting it on other characters
-                const otherStores = D1StoresService.getStores().filter((store) => !store.isVault && store.id !== this.store.id);
-                const otherStoresWithSpace = otherStores.filter((store) => store.spaceLeftForItem(item));
+        return _.reduce(
+          items,
+          (promise, item) => {
+            // Move a single item. We do this as a chain of promises so we can reevaluate the situation after each move.
+            return promise
+              .then(() => {
+                const vault = D1StoresService.getVault()!;
+                const vaultSpaceLeft = vault.spaceLeftForItem(item);
+                if (vaultSpaceLeft <= 1) {
+                  // If we're down to one space, try putting it on other characters
+                  const otherStores = D1StoresService.getStores().filter(
+                    (store) => !store.isVault && store.id !== this.store.id
+                  );
+                  const otherStoresWithSpace = otherStores.filter((store) =>
+                    store.spaceLeftForItem(item)
+                  );
 
-                if (otherStoresWithSpace.length) {
-                  if ($featureFlags.debugMoves) {
-                    console.log("Farming initiated move:", item.amount, item.name, item.type, 'to', otherStoresWithSpace[0].name, 'from', D1StoresService.getStore(item.owner)!.name);
+                  if (otherStoresWithSpace.length) {
+                    if ($featureFlags.debugMoves) {
+                      console.log(
+                        'Farming initiated move:',
+                        item.amount,
+                        item.name,
+                        item.type,
+                        'to',
+                        otherStoresWithSpace[0].name,
+                        'from',
+                        D1StoresService.getStore(item.owner)!.name
+                      );
+                    }
+                    return dimItemService.moveTo(
+                      item,
+                      otherStoresWithSpace[0],
+                      false,
+                      item.amount,
+                      items,
+                      reservations
+                    );
                   }
-                  return dimItemService.moveTo(item, otherStoresWithSpace[0], false, item.amount, items, reservations);
                 }
-              }
-              if ($featureFlags.debugMoves) {
-                console.log("Farming initiated move:", item.amount, item.name, item.type, 'to', vault.name, 'from', D1StoresService.getStore(item.owner)!.name);
-              }
-              return dimItemService.moveTo(item, vault, false, item.amount, items, reservations);
-            })
-            .then(() => {
-              if (incrementCounter) {
-                this.itemsMoved++;
-              }
-            })
-            .catch((e) => {
-              if (e.code === 'no-space') {
-                outOfSpaceWarning(this.store);
-              } else {
-                toaster.pop('error', item.name, e.message);
-              }
-              throw e;
-            });
-        }, $q.resolve());
+                if ($featureFlags.debugMoves) {
+                  console.log(
+                    'Farming initiated move:',
+                    item.amount,
+                    item.name,
+                    item.type,
+                    'to',
+                    vault.name,
+                    'from',
+                    D1StoresService.getStore(item.owner)!.name
+                  );
+                }
+                return dimItemService.moveTo(item, vault, false, item.amount, items, reservations);
+              })
+              .then(() => {
+                if (incrementCounter) {
+                  this.itemsMoved++;
+                }
+              })
+              .catch((e) => {
+                if (e.code === 'no-space') {
+                  outOfSpaceWarning(this.store);
+                } else {
+                  toaster.pop('error', item.name, e.message);
+                }
+                throw e;
+              });
+          },
+          $q.resolve()
+        );
       });
     },
     farmItems() {
       const store = D1StoresService.getStore(this.store.id)!;
-      const toMove = _.select(store.items, (i) => {
-        return !i.notransfer && (
-          i.isEngram ||
-          (i.equipment && i.type === 'Uncommon') ||
-          glimmerHashes.has(i.hash));
+      const toMove = store.items.filter((i) => {
+        return (
+          !i.notransfer &&
+          (i.isEngram || (i.equipment && i.type === 'Uncommon') || glimmerHashes.has(i.hash))
+        );
       });
 
       if (toMove.length === 0) {
@@ -122,10 +155,9 @@ function FarmingService() {
       }
 
       this.movingItems = true;
-      return this.moveItemsToVault(toMove, true)
-        .finally(() => {
-          this.movingItems = false;
-        });
+      return this.moveItemsToVault(toMove, true).finally(() => {
+        this.movingItems = false;
+      });
     },
     // Ensure that there's one open space in each category that could
     // hold an item, so they don't go to the postmaster.
@@ -138,7 +170,7 @@ function FarmingService() {
         const items = store.buckets[makeRoomType];
         if (items.length > 0 && items.length >= store.capacityForItem(items[0])) {
           // We'll move the lowest-value item to the vault.
-          const itemToMove = _.min(items.filter((i) => !i.equipped && !i.notransfer), (i) => {
+          const itemToMove = _.minBy(items.filter((i) => !i.equipped && !i.notransfer), (i) => {
             let value = {
               Common: 0,
               Uncommon: 1,
@@ -153,7 +185,7 @@ function FarmingService() {
             return value;
           });
           if (!_.isNumber(itemToMove)) {
-            itemsToMove.push(itemToMove);
+            itemsToMove.push(itemToMove!);
           }
         }
       });
@@ -163,10 +195,9 @@ function FarmingService() {
       }
 
       this.makingRoom = true;
-      return this.moveItemsToVault(itemsToMove, false)
-        .finally(() => {
-          this.makingRoom = false;
-        });
+      return this.moveItemsToVault(itemsToMove, false).finally(() => {
+        this.makingRoom = false;
+      });
     },
     start(account: DestinyAccount, storeId: string) {
       const farm = () => {
@@ -177,18 +208,22 @@ function FarmingService() {
           2180254632 // primary ammo synth
         ];
 
-        this.consolidate = _.compact(consolidateHashes.map((hash) => {
-          const ret = copy(D1StoresService.getItemAcrossStores({
-            hash
-          }));
-          if (ret) {
-            ret.amount = sum(D1StoresService.getStores(), (s) => s.amountOfItem(ret));
-          }
-          return ret;
-        }));
+        this.consolidate = _.compact(
+          consolidateHashes.map((hash) => {
+            const ret = copy(
+              D1StoresService.getItemAcrossStores({
+                hash
+              })
+            );
+            if (ret) {
+              ret.amount = _.sumBy(D1StoresService.getStores(), (s) => s.amountOfItem(ret));
+            }
+            return ret;
+          })
+        );
 
         this.farmItems().then(() => {
-          if (settings.makeRoomForItems) {
+          if (settings.farming.makeRoomForItems) {
             this.makeRoomForItems();
           }
         });
@@ -213,7 +248,7 @@ function FarmingService() {
 
         intervalId = $interval(() => {
           // just start reloading stores more often
-          $rootScope.$broadcast('dim-refresh');
+          refresh();
         }, 60000);
       }
     },

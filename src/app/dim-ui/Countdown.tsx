@@ -10,6 +10,11 @@ interface State {
 }
 
 export default class Countdown extends React.Component<Props, State> {
+  static getDerivedStateFromProps(props: Props) {
+    const diff = props.endTime.getTime() - Date.now();
+    return { diff };
+  }
+
   private interval: number;
 
   constructor(props: Props) {
@@ -23,21 +28,15 @@ export default class Countdown extends React.Component<Props, State> {
     this.update();
   }
 
-  componentWillReceiveProps(nextProps: Props) {
-    if (nextProps.endTime !== this.props.endTime) {
-      clearInterval(this.interval);
-      this.interval = window.setInterval(this.update, 60000);
-      this.update();
-    }
-  }
-
   componentWillUnmount() {
     clearInterval(this.interval);
   }
 
   render() {
     return (
-      <span className="countdown" title={this.props.endTime.toLocaleString()}>{dhms(this.state.diff / 1000)}</span>
+      <span className="countdown" title={this.props.endTime.toLocaleString()}>
+        {dhms(this.state.diff / 1000)}
+      </span>
     );
   }
 
@@ -47,7 +46,7 @@ export default class Countdown extends React.Component<Props, State> {
     if (diff <= 0) {
       clearInterval(this.interval);
     }
-  }
+  };
 }
 
 function pad(n: number, width: number) {

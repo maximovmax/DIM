@@ -1,12 +1,23 @@
 import { getAccessTokenFromRefreshToken } from './oauth.service';
-import { Tokens, removeToken, setToken, getToken, hasTokenExpired, removeAccessToken } from './oauth-token.service';
+import {
+  Tokens,
+  removeToken,
+  setToken,
+  getToken,
+  hasTokenExpired,
+  removeAccessToken
+} from './oauth-token.service';
 import { PlatformErrorCodes } from 'bungie-api-ts/user';
-import { $rootScope } from 'ngimport';
+import { router } from '../../router';
 
 let cache: Promise<Tokens> | null = null;
 
-export async function fetchWithBungieOAuth(request: Request | string, options?: RequestInit, triedRefresh = false): Promise<Response> {
-  if (typeof request === "string") {
+export async function fetchWithBungieOAuth(
+  request: Request | string,
+  options?: RequestInit,
+  triedRefresh = false
+): Promise<Response> {
+  if (typeof request === 'string') {
     request = new Request(request);
   }
 
@@ -16,9 +27,9 @@ export async function fetchWithBungieOAuth(request: Request | string, options?: 
   } catch (e) {
     // Note: instanceof doesn't work due to a babel bug:
     if (e.name === 'FatalTokenError') {
-      console.warn("Unable to get auth token, clearing auth tokens & going to login: ", e);
+      console.warn('Unable to get auth token, clearing auth tokens & going to login: ', e);
       removeToken();
-      $rootScope.$broadcast('dim-no-token-found');
+      goToLoginPage();
     }
     throw e;
   }
@@ -29,7 +40,7 @@ export async function fetchWithBungieOAuth(request: Request | string, options?: 
     if (triedRefresh) {
       // Give up
       removeToken();
-      $rootScope.$broadcast('dim-no-token-found');
+      goToLoginPage();
       throw new Error("Access token expired, and we've already tried to refresh. Failing.");
     }
     // OK, Bungie has told us our access token is expired or
@@ -47,11 +58,13 @@ async function responseIndicatesBadToken(response: Response) {
     return true;
   }
   const data = await response.clone().json();
-  return data &&
-      (data.ErrorCode === PlatformErrorCodes.AccessTokenHasExpired ||
+  return (
+    data &&
+    (data.ErrorCode === PlatformErrorCodes.AccessTokenHasExpired ||
       data.ErrorCode === PlatformErrorCodes.WebAuthRequired ||
       // (also means the access token has expired)
-      data.ErrorCode === PlatformErrorCodes.WebAuthModuleAsyncFailed);
+      data.ErrorCode === PlatformErrorCodes.WebAuthModuleAsyncFailed)
+  );
 }
 
 /**
@@ -68,8 +81,8 @@ async function getActiveToken(): Promise<Tokens> {
   let token = getToken();
   if (!token) {
     removeToken();
-    $rootScope.$broadcast('dim-no-token-found');
-    throw new FatalTokenError("No auth token exists, redirect to login");
+    goToLoginPage();
+    throw new FatalTokenError('No auth token exists, redirect to login');
   }
 
   const accessTokenIsValid = token && !hasTokenExpired(token.accessToken);
@@ -81,14 +94,14 @@ async function getActiveToken(): Promise<Tokens> {
   const refreshTokenIsValid = token && !hasTokenExpired(token.refreshToken);
   if (!refreshTokenIsValid) {
     removeToken();
-    $rootScope.$broadcast('dim-no-token-found');
-    throw new FatalTokenError("Refresh token invalid, clearing auth tokens & going to login");
+    goToLoginPage();
+    throw new FatalTokenError('Refresh token invalid, clearing auth tokens & going to login');
   }
 
   try {
     token = await (cache || getAccessTokenFromRefreshToken(token.refreshToken!));
     setToken(token);
-    console.log("Successfully updated auth token from refresh token.");
+    console.log('Successfully updated auth token from refresh token.');
     return token;
   } catch (e) {
     return handleRefreshTokenError(e);
@@ -99,20 +112,28 @@ async function getActiveToken(): Promise<Tokens> {
 
 async function handleRefreshTokenError(response: Error | Response): Promise<Tokens> {
   if (response instanceof TypeError) {
-    console.warn("Error getting auth token from refresh token because there's no internet connection (or a permissions issue). Not clearing token.", response);
+    console.warn(
+      "Error getting auth token from refresh token because there's no internet connection (or a permissions issue). Not clearing token.",
+      response
+    );
     throw response;
   }
   if (response instanceof Error) {
-    console.warn("Other error getting auth token from refresh token. Not clearing auth tokens", response);
+    console.warn(
+      'Other error getting auth token from refresh token. Not clearing auth tokens',
+      response
+    );
     throw response;
   }
   switch (response.status) {
     case -1:
-      throw new Error("Error getting auth token from refresh token because there's no internet connection. Not clearing token.");
+      throw new Error(
+        "Error getting auth token from refresh token because there's no internet connection. Not clearing token."
+      );
     case 400:
     case 401:
     case 403: {
-      throw new FatalTokenError("Refresh token expired or not valid, status " + response.status);
+      throw new FatalTokenError('Refresh token expired or not valid, status ' + response.status);
     }
     default: {
       try {
@@ -122,7 +143,9 @@ async function handleRefreshTokenError(response: Error | Response): Promise<Toke
             case PlatformErrorCodes.RefreshTokenNotYetValid:
             case PlatformErrorCodes.AccessTokenHasExpired:
             case PlatformErrorCodes.AuthorizationCodeInvalid:
-              throw new FatalTokenError("Refresh token expired or not valid, platform error " + data.ErrorCode);
+              throw new FatalTokenError(
+                'Refresh token expired or not valid, platform error ' + data.ErrorCode
+              );
           }
         }
       } catch (e) {
@@ -130,5 +153,18 @@ async function handleRefreshTokenError(response: Error | Response): Promise<Toke
       }
     }
   }
-  throw new Error("Unknown error getting response token: " + response);
+  throw new Error('Unknown error getting response token: ' + response);
+}
+
+export function goToLoginPage() {
+  if (
+    $DIM_FLAVOR === 'dev' &&
+    (!localStorage.getItem('apiKey') ||
+      !localStorage.getItem('oauthClientId') ||
+      !localStorage.getItem('oauthClientSecret'))
+  ) {
+    router.stateService.go('developer');
+  } else {
+    router.stateService.go('login');
+  }
 }

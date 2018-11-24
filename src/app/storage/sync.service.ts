@@ -1,10 +1,10 @@
-import { equals, copy, extend } from 'angular';
-import * as _ from 'underscore';
+import copy from 'fast-copy';
+import { deepEqual } from 'fast-equals';
+import * as _ from 'lodash';
 import { reportException } from '../exceptions';
 import { IndexedDBStorage } from './indexed-db-storage';
 import { GoogleDriveStorage } from './google-drive-storage';
 import { BungieMembershipType } from 'bungie-api-ts/user';
-import { $rootScope } from 'ngimport';
 import { initSettings } from '../settings/settings';
 import { percent } from '../inventory/dimPercentWidth.directive';
 import { humanBytes } from './human-bytes';
@@ -24,9 +24,9 @@ export interface DimData {
 }
 
 export interface StorageAdapter {
-  supported: boolean;
+  readonly supported: boolean;
+  readonly name: string;
   enabled: boolean;
-  name: string;
 
   get(): Promise<DimData>;
   set(value: object): Promise<void>;
@@ -43,23 +43,26 @@ export interface StorageAdapter {
 if (navigator.storage && navigator.storage.persist) {
   navigator.storage.persist().then((persistent) => {
     if (persistent) {
-      console.log("Sync: Storage will not be cleared except by explicit user action.");
+      console.log('Sync: Storage will not be cleared except by explicit user action.');
     } else {
-      console.log("Sync: Storage may be cleared under storage pressure.");
+      console.log('Sync: Storage may be cleared under storage pressure.');
     }
   });
 }
 if ('storage' in navigator && 'estimate' in navigator.storage) {
   navigator.storage.estimate().then(({ usage, quota }) => {
-    console.log(`Sync: DIM is using ${humanBytes(usage)} total out of ${humanBytes(quota)} in storage quota (${percent(usage / quota)}).`);
+    console.log(
+      `Sync: DIM is using ${humanBytes(usage)} total out of ${humanBytes(
+        quota
+      )} in storage quota (${percent(usage / quota)}).`
+    );
   });
 }
 
 const GoogleDriveStorageAdapter = new GoogleDriveStorage();
-const adapters: StorageAdapter[] = [
-  new IndexedDBStorage(),
-  GoogleDriveStorageAdapter
-].filter((a) => a.supported);
+const adapters: StorageAdapter[] = [new IndexedDBStorage(), GoogleDriveStorageAdapter].filter(
+  (a) => a.supported
+);
 
 // A cache for while we're already in the middle of loading
 let _getPromise: Promise<DimData> | undefined;
@@ -72,9 +75,9 @@ export const SyncService = {
   init() {
     GoogleDriveStorageAdapter.init();
 
-    $rootScope.$on('gdrive-sign-in', () => {
+    GoogleDriveStorageAdapter.signIn$.subscribe(() => {
       // Force refresh data
-      console.log("GDrive sign in, refreshing data");
+      console.log('GDrive sign in, refreshing data');
       this.get(true).then(initSettings);
     });
   },
@@ -88,22 +91,23 @@ export const SyncService = {
    */
   async set(value: Partial<DimData>, PUT = false): Promise<void> {
     if (!cached) {
-      throw new Error("Must call get at least once before setting");
+      throw new Error('Must call get at least once before setting');
     }
 
-    if (!PUT && equals(_.pick(cached, Object.keys(value)), value)) {
+    if (!PUT && deepEqual(_.pick(cached, Object.keys(value)), value)) {
       if ($featureFlags.debugSync) {
         console.log(_.pick(cached, Object.keys(value)), value);
-        console.log("Skip save, already got it");
+        console.log('Skip save, already got it');
       }
       return;
     }
 
     // use replace to override the data. normally we're doing a PATCH
-    if (PUT) { // update our data
+    if (PUT) {
+      // update our data
       cached = copy(value) as DimData;
     } else {
-      extend(cached, copy(value));
+      Object.assign(cached, copy(value));
     }
 
     for (const adapter of adapters) {
@@ -187,22 +191,22 @@ async function getAndCacheFromAdapters(): Promise<DimData> {
 async function getFromAdapters(): Promise<DimData | undefined> {
   for (const adapter of adapters.slice().reverse()) {
     if (adapter.enabled) {
-        if ($featureFlags.debugSync) {
-          console.log('getting from ', adapter.name);
-        }
-        try {
-          const value = await adapter.get();
+      if ($featureFlags.debugSync) {
+        console.log('getting from ', adapter.name);
+      }
+      try {
+        const value = await adapter.get();
 
-          if (value && !_.isEmpty(value)) {
-            if ($featureFlags.debugSync) {
-              console.log('got', value, 'from adapter ', adapter.name);
-            }
-            return value;
+        if (value && !_.isEmpty(value)) {
+          if ($featureFlags.debugSync) {
+            console.log('got', value, 'from adapter ', adapter.name);
           }
-        } catch (e) {
-          console.error('Sync: Error loading from', adapter.name, e);
-          reportException('Sync Load', e);
+          return value;
         }
+      } catch (e) {
+        console.error('Sync: Error loading from', adapter.name, e);
+        reportException('Sync Load', e);
+      }
     } else if ($featureFlags.debugSync) {
       console.log(adapter.name, 'is disabled');
     }

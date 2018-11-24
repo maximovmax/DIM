@@ -21,13 +21,19 @@ function controller(
     amount: number;
     store: DimStore;
     stores: DimStore[];
+    settings: typeof settings;
   },
   $scope
 ) {
   'ngInject';
   const vm = this;
 
-  vm.settings = settings;
+  $scope.$watch(
+    () => settings,
+    () => {
+      vm.settings = settings;
+    }
+  );
 
   vm.$onInit = () => {
     const storeService = vm.item.getStoresService();
@@ -68,9 +74,11 @@ function controller(
 
     // Can pull items from the postmaster to the same character
     if (vm.item.location.inPostmaster) {
-      return vm.store.id === buttonStore.id &&
-          vm.item.destinyVersion === 2 &&
-          vm.item.canPullFromPostmaster;
+      return (
+        vm.store.id === buttonStore.id &&
+        vm.item.destinyVersion === 2 &&
+        vm.item.canPullFromPostmaster
+      );
     } else if (vm.item.notransfer) {
       // Can store an equiped item in same itemStore
       if (vm.item.equipped && vm.store.id === buttonStore.id) {
@@ -78,10 +86,12 @@ function controller(
       }
     } else if (vm.store.id !== buttonStore.id || vm.item.equipped) {
       // In Destiny2, only show one store for account wide items
-      if (vm.item.destinyVersion === 2 &&
-          vm.item.bucket &&
-          vm.item.bucket.accountWide &&
-          !buttonStore.current) {
+      if (
+        vm.item.destinyVersion === 2 &&
+        vm.item.bucket &&
+        vm.item.bucket.accountWide &&
+        !buttonStore.current
+      ) {
         return false;
       } else {
         return true;

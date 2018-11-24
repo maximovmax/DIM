@@ -1,6 +1,6 @@
 import { ReviewDataCache } from './reviewDataCache';
 import { handleSubmitErrors } from './trackerErrorHandler';
-import { loadingTracker } from '../ngimport-more';
+import { loadingTracker } from '../shell/loading-tracker';
 import { D1Item } from '../inventory/item-types';
 import { dtrFetch } from './dtr-service-helper';
 import { WorkingD1Rating, D1ItemReviewRequest } from '../item-review/d1-dtr-api-types';
@@ -51,10 +51,9 @@ export class ReviewSubmitter {
   }
 
   _submitReviewPromise(item: D1Item, membershipInfo: DtrReviewer) {
-    if (!item.dtrRating ||
-        !item.dtrRating.userReview) {
-          return Promise.resolve({});
-        }
+    if (!item.dtrRating || !item.dtrRating.userReview) {
+      return Promise.resolve({});
+    }
 
     const rollAndPerks = getRollAndPerks(item);
     const reviewer = this._getReviewer(membershipInfo);
@@ -82,10 +81,9 @@ export class ReviewSubmitter {
   }
 
   async submitReview(item, membershipInfo) {
-    return this._submitReviewPromise(item, membershipInfo)
-      .then(() => {
-        this._markItemAsReviewedAndSubmitted(item);
-        this._eventuallyPurgeCachedData(item);
-      });
+    return this._submitReviewPromise(item, membershipInfo).then(() => {
+      this._markItemAsReviewedAndSubmitted(item);
+      this._eventuallyPurgeCachedData(item);
+    });
   }
 }

@@ -1,5 +1,4 @@
-import * as _ from 'underscore';
-import { REP_TOKENS } from './rep-tokens';
+import * as _ from 'lodash';
 import { getBuckets } from '../destiny2/d2-buckets.service';
 import { DestinyAccount } from '../accounts/destiny-account.service';
 import { settings } from '../settings/settings';
@@ -11,7 +10,8 @@ import { BucketCategory } from 'bungie-api-ts/destiny2';
 import { D2StoresService } from '../inventory/d2-stores.service';
 import { toaster } from '../ngimport-more';
 import { t } from 'i18next';
-import { $q, $interval, $rootScope } from 'ngimport';
+import { $q, $interval } from 'ngimport';
+import { refresh } from '../shell/refresh';
 
 export const D2FarmingService = makeD2FarmingService();
 
@@ -24,14 +24,18 @@ function makeD2FarmingService() {
   let subscription;
 
   const outOfSpaceWarning = _.throttle((store) => {
-    toaster.pop('info',
-                t('FarmingMode.OutOfRoomTitle'),
-                t('FarmingMode.OutOfRoom', { character: store.name }));
+    toaster.pop(
+      'info',
+      t('FarmingMode.OutOfRoomTitle'),
+      t('FarmingMode.OutOfRoom', { character: store.name })
+    );
   }, 60000);
 
   function getMakeRoomBuckets() {
     return getBuckets().then((buckets) => {
-      return Object.values(buckets.byHash).filter((b) => b.category === BucketCategory.Equippable && b.type);
+      return Object.values(buckets.byHash).filter(
+        (b) => b.category === BucketCategory.Equippable && b.type
+      );
     });
   }
 
@@ -52,7 +56,7 @@ function makeD2FarmingService() {
         const items = store.buckets[makeRoomBucket.id];
         if (items.length > 0 && items.length >= makeRoomBucket.capacity) {
           // We'll move the lowest-value item to the vault.
-          const itemToMove = _.min(items.filter((i) => !i.equipped && !i.notransfer), (i) => {
+          const itemToMove = _.minBy(items.filter((i) => !i.equipped && !i.notransfer), (i) => {
             let value = {
               Common: 0,
               Uncommon: 1,
@@ -66,14 +70,18 @@ function makeD2FarmingService() {
             }
             return value;
           });
-          if (!_.isNumber(itemToMove)) {
+          if (itemToMove) {
             itemsToMove.push(itemToMove);
           }
         }
       });
 
       if (settings.farming.moveTokens) {
-        itemsToMove = itemsToMove.concat(store.items.filter((i) => REP_TOKENS.has(i.hash) && !i.notransfer));
+        itemsToMove = itemsToMove.concat(
+          store.items.filter(
+            (i) => i.isDestiny2() && i.itemCategoryHashes.includes(2088636411) && !i.notransfer
+          )
+        );
       }
 
       if (itemsToMove.length === 0) {
@@ -112,7 +120,7 @@ function makeD2FarmingService() {
 
         intervalId = $interval(() => {
           // just start reloading stores more often
-          $rootScope.$broadcast('dim-refresh');
+          refresh();
         }, 60000);
       }
     },
@@ -130,7 +138,11 @@ function makeD2FarmingService() {
     }
   };
 
-  async function moveItemsToVault(store: D2Store, items: D2Item[], makeRoomBuckets: InventoryBucket[]) {
+  async function moveItemsToVault(
+    store: D2Store,
+    items: D2Item[],
+    makeRoomBuckets: InventoryBucket[]
+  ) {
     const reservations: MoveReservations = {};
     // reserve one space in the active character
     reservations[store.id] = {};
@@ -145,19 +157,46 @@ function makeD2FarmingService() {
         const vaultSpaceLeft = vault.spaceLeftForItem(item);
         if (vaultSpaceLeft <= 1) {
           // If we're down to one space, try putting it on other characters
-          const otherStores = D2StoresService.getStores().filter((s) => !s.isVault && s.id !== store.id);
+          const otherStores = D2StoresService.getStores().filter(
+            (s) => !s.isVault && s.id !== store.id
+          );
           const otherStoresWithSpace = otherStores.filter((store) => store.spaceLeftForItem(item));
 
           if (otherStoresWithSpace.length) {
             if ($featureFlags.debugMoves) {
-              console.log("Farming initiated move:", item.amount, item.name, item.type, 'to', otherStoresWithSpace[0].name, 'from', D2StoresService.getStore(item.owner)!.name);
+              console.log(
+                'Farming initiated move:',
+                item.amount,
+                item.name,
+                item.type,
+                'to',
+                otherStoresWithSpace[0].name,
+                'from',
+                D2StoresService.getStore(item.owner)!.name
+              );
             }
-            await dimItemService.moveTo(item, otherStoresWithSpace[0], false, item.amount, items, reservations);
+            await dimItemService.moveTo(
+              item,
+              otherStoresWithSpace[0],
+              false,
+              item.amount,
+              items,
+              reservations
+            );
             continue;
           }
         }
         if ($featureFlags.debugMoves) {
-          console.log("Farming initiated move:", item.amount, item.name, item.type, 'to', vault.name, 'from', D2StoresService.getStore(item.owner)!.name);
+          console.log(
+            'Farming initiated move:',
+            item.amount,
+            item.name,
+            item.type,
+            'to',
+            vault.name,
+            'from',
+            D2StoresService.getStore(item.owner)!.name
+          );
         }
         await dimItemService.moveTo(item, vault, false, item.amount, items, reservations);
       } catch (e) {

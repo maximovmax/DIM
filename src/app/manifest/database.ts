@@ -1,4 +1,4 @@
-import * as _ from 'underscore';
+import * as _ from 'lodash';
 
 // tslint:disable-next-line:no-implicit-dependencies
 import sqlWasmPath from 'file-loader?name=[name]-[hash:6].[ext]!sql.js/js/sql-wasm.js';
@@ -18,11 +18,11 @@ declare const WebAssembly: any;
 // if they need it. So we can minify sql.js specifically (as explained
 // in the Webpack config, we need to explicitly name this chunk, which
 // can only be done using the dynamic import method.
-export const requireSqlLib = _.memoize(() => {
+export const requireSqlLib = _.once(() => {
   function importAsmJs() {
     delete window.Module;
     delete window.SQL;
-    console.log("Using asm.js SQLite");
+    console.log('Using asm.js SQLite');
     // tslint:disable-next-line:space-in-parens
     return import(/* webpackChunkName: "sqlLib" */ 'sql.js');
   }
@@ -44,16 +44,16 @@ export const requireSqlLib = _.memoize(() => {
             try {
               // Do a self-test
               const db = new window.SQL.Database();
-              db.run("CREATE TABLE hello (a int, b char);");
+              db.run('CREATE TABLE hello (a int, b char);');
               db.run("INSERT INTO hello VALUES (0, 'hello');");
-              db.exec("SELECT * FROM hello");
+              db.exec('SELECT * FROM hello');
             } catch (e) {
               console.error('Failed to load WASM SQLite, falling back', e);
               importAsmJs().then(resolve, reject);
               return;
             }
 
-            console.info("Using WASM SQLite");
+            console.info('Using WASM SQLite');
             resolve(window.SQL);
             delete window.SQL;
           }

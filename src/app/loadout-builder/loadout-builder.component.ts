@@ -1,4 +1,5 @@
-import * as _ from 'underscore';
+import * as _ from 'lodash';
+import copy from 'fast-copy';
 import template from './loadout-builder.html';
 // tslint:disable-next-line:no-implicit-dependencies
 import intellectIcon from 'app/images/intellect.png';
@@ -8,16 +9,16 @@ import disciplineIcon from 'app/images/discipline.png';
 import strengthIcon from 'app/images/strength.png';
 import { getBonus } from '../inventory/store/character-utils';
 import { getDefinitions } from '../destiny1/d1-definitions.service';
-import { IComponentOptions, IController, IScope, ITimeoutService, extend, copy } from 'angular';
+import { IComponentOptions, IController, ITimeoutService } from 'angular';
 import { DestinyAccount } from '../accounts/destiny-account.service';
-import { Loadout, dimLoadoutService } from '../loadout/loadout.service';
-import { sum } from '../util';
+import { Loadout, dimLoadoutService, LoadoutClass } from '../loadout/loadout.service';
 import { DestinyClass } from 'bungie-api-ts/destiny2';
 import { D1Item, D1GridNode } from '../inventory/item-types';
 import { D1Store } from '../inventory/store-types';
 import { dimVendorService } from '../vendors/vendor.service';
 import { D1StoresService } from '../inventory/d1-stores.service';
 import { Transition } from '@uirouter/react';
+import { newLoadout } from '../loadout/loadout-utils';
 
 export const LoadoutBuilderComponent: IComponentOptions = {
   controller: LoadoutBuilderController,
@@ -30,7 +31,7 @@ export const LoadoutBuilderComponent: IComponentOptions = {
 };
 
 interface D1ItemWithNormalStats extends D1Item {
-  normalStats: {
+  normalStats?: {
     [hash: number]: {
       statHash: number;
       base: number;
@@ -42,26 +43,16 @@ interface D1ItemWithNormalStats extends D1Item {
   };
 }
 
-type ArmorTypes =
-  | 'Helmet'
-  | 'Gauntlets'
-  | 'Chest'
-  | 'Leg'
-  | 'ClassItem'
-  | 'Artifact'
-  | 'Ghost';
+type ArmorTypes = 'Helmet' | 'Gauntlets' | 'Chest' | 'Leg' | 'ClassItem' | 'Artifact' | 'Ghost';
 
-type StatTypes =
-  | 'STAT_INTELLECT'
-  | 'STAT_DISCIPLINE'
-  | 'STAT_STRENGTH';
+type StatTypes = 'STAT_INTELLECT' | 'STAT_DISCIPLINE' | 'STAT_STRENGTH';
 
 type ClassTypes = 'titan' | 'warlock' | 'hunter';
 
 interface ArmorSet {
   armor: { [armorType in ArmorTypes]: D1Item & { bonusType: string } };
   stats: {
-    [statType in StatTypes] : {
+    [statType in StatTypes]: {
       value: number;
       tier: 0 | 1 | 2 | 3 | 4 | 5;
       name: string;
@@ -81,7 +72,9 @@ interface LockedPerk {
 type ItemBucket = { [armorType in ArmorTypes]: D1ItemWithNormalStats[] };
 type PerkCombination = { [armorType in ArmorTypes]: D1GridNode[] };
 
-interface LockedPerkHash { [hash: number]: LockedPerk; }
+interface LockedPerkHash {
+  [hash: number]: LockedPerk;
+}
 
 interface SetType {
   set: ArmorSet;
@@ -124,7 +117,6 @@ function LoadoutBuilderController(
     setOrderValues: string;
     lockedchanged: boolean;
   },
-  $scope: IScope,
   $timeout: ITimeoutService,
   $i18next,
   ngDialog
@@ -135,39 +127,142 @@ function LoadoutBuilderController(
   vm.reviewsEnabled = $featureFlags.reviewsEnabled;
 
   let buckets: { [classType in ClassTypes]: ItemBucket } = {
-    warlock: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    titan: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    hunter: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] }
-   };
+    warlock: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    titan: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    hunter: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    }
+  };
   let vendorBuckets: { [classType in ClassTypes]: ItemBucket } = {
-    warlock: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    titan: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    hunter: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] }
-   };
+    warlock: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    titan: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    hunter: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    }
+  };
   const perks: { [classType in ClassTypes]: PerkCombination } = {
-    warlock: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    titan: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    hunter: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] }
+    warlock: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    titan: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    hunter: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    }
   };
   const vendorPerks: { [classType in ClassTypes]: PerkCombination } = {
-    warlock: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    titan: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] },
-    hunter: { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Ghost: [], Artifact: [] }
+    warlock: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    titan: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    },
+    hunter: {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Ghost: [],
+      Artifact: []
+    }
   };
 
   function getBonusType(armorpiece: D1ItemWithNormalStats): string {
     if (!armorpiece.normalStats) {
       return '';
     }
-    return (armorpiece.normalStats[144602215].bonus > 0 ? 'int ' : '') +
+    return (
+      (armorpiece.normalStats[144602215].bonus > 0 ? 'int ' : '') +
       (armorpiece.normalStats[1735777505].bonus > 0 ? 'dis ' : '') +
-      (armorpiece.normalStats[4244567218].bonus > 0 ? 'str' : '');
+      (armorpiece.normalStats[4244567218].bonus > 0 ? 'str' : '')
+    );
   }
 
-  function getBestItem(armor: D1ItemWithNormalStats[], stats: number[], type: string, nonExotic = false) {
+  function getBestItem(
+    armor: D1ItemWithNormalStats[],
+    stats: number[],
+    type: string,
+    nonExotic = false
+  ) {
     // for specific armor (Helmet), look at stats (int/dis), return best one.
     return {
-      item: _.max(armor, (o) => {
+      item: _.maxBy(armor, (o) => {
         if (nonExotic && o.isExotic) {
           return 0;
         }
@@ -176,13 +271,13 @@ function LoadoutBuilderController(
         // tslint:disable-next-line:prefer-for-of
         for (let i = 0; i < stats.length; i++) {
           const stat = stats[i];
-          const scaleType = (o.tier === 'Rare') ? 'base' : vm.scaleType;
-          const normalStats = o.normalStats[stat];
+          const scaleType = o.tier === 'Rare' ? 'base' : vm.scaleType;
+          const normalStats = o.normalStats![stat];
           total += normalStats[scaleType];
           bonus = normalStats.bonus;
         }
         return total + bonus;
-      }),
+      })!,
       bonusType: type
     };
   }
@@ -211,16 +306,22 @@ function LoadoutBuilderController(
       const dis = armor.item.normalStats[1735777505];
       const str = armor.item.normalStats[4244567218];
 
-      const scaleType = (armor.item.tier === 'Rare') ? 'base' : vm.scaleType;
+      const scaleType = armor.item.tier === 'Rare' ? 'base' : vm.scaleType;
 
       stats.STAT_INTELLECT.value += int[scaleType];
       stats.STAT_DISCIPLINE.value += dis[scaleType];
       stats.STAT_STRENGTH.value += str[scaleType];
 
       switch (armor.bonusType) {
-      case 'int': stats.STAT_INTELLECT.value += int.bonus; break;
-      case 'dis': stats.STAT_DISCIPLINE.value += dis.bonus; break;
-      case 'str': stats.STAT_STRENGTH.value += str.bonus; break;
+        case 'int':
+          stats.STAT_INTELLECT.value += int.bonus;
+          break;
+        case 'dis':
+          stats.STAT_DISCIPLINE.value += dis.bonus;
+          break;
+        case 'str':
+          stats.STAT_STRENGTH.value += str.bonus;
+          break;
       }
     }
 
@@ -274,7 +375,9 @@ function LoadoutBuilderController(
     const excludedIndices = new Set(excluded.map((i) => i.index));
 
     for (armortype in bucket) {
-      const combined = (vm.includeVendors) ? bucket[armortype].concat(vendorBucket[armortype]) : bucket[armortype];
+      const combined = vm.includeVendors
+        ? bucket[armortype].concat(vendorBucket[armortype])
+        : bucket[armortype];
       const lockedItem = locked[armortype];
       if (lockedItem) {
         best = [{ item: lockedItem, bonusType: getBonusType(lockedItem) }];
@@ -285,8 +388,12 @@ function LoadoutBuilderController(
 
         if (!_.isEmpty(lockedPerks[armortype])) {
           const lockedPerkKeys = Object.keys(lockedPerks[armortype]);
-          const andPerkHashes = lockedPerkKeys.filter((perkHash) => lockedPerks[armortype][perkHash].lockType === 'and').map(Number);
-          const orPerkHashes = lockedPerkKeys.filter((perkHash) => lockedPerks[armortype][perkHash].lockType === 'or').map(Number);
+          const andPerkHashes = lockedPerkKeys
+            .filter((perkHash) => lockedPerks[armortype][perkHash].lockType === 'and')
+            .map(Number);
+          const orPerkHashes = lockedPerkKeys
+            .filter((perkHash) => lockedPerks[armortype][perkHash].lockType === 'or')
+            .map(Number);
 
           hasPerks = (item) => {
             if (!orPerkHashes.length && !andPerkHashes.length) {
@@ -295,8 +402,10 @@ function LoadoutBuilderController(
             function matchNode(perkHash) {
               return item.talentGrid!.nodes.some((n) => n.hash === perkHash);
             }
-            return Boolean((orPerkHashes.length && orPerkHashes.some(matchNode)) ||
-              (andPerkHashes.length && andPerkHashes.every(matchNode)));
+            return Boolean(
+              (orPerkHashes.length && orPerkHashes.some(matchNode)) ||
+                (andPerkHashes.length && andPerkHashes.every(matchNode))
+            );
           };
         }
 
@@ -320,29 +429,35 @@ function LoadoutBuilderController(
       }
 
       bestCombs = [];
-      _.each(_.uniq(best, false, (o) => {
-        return o.item.index;
-      }), (obj) => {
-        obj.bonusType = getBonusType(obj.item);
-        if (obj.bonusType === '') {
-          bestCombs.push({ item: obj.item, bonusType: '' });
+      _.each(
+        _.uniqBy(best, (o) => {
+          return o.item.index;
+        }),
+        (obj) => {
+          obj.bonusType = getBonusType(obj.item);
+          if (obj.bonusType === '') {
+            bestCombs.push({ item: obj.item, bonusType: '' });
+          }
+          if (obj.bonusType.indexOf('int') > -1) {
+            bestCombs.push({ item: obj.item, bonusType: 'int' });
+          }
+          if (obj.bonusType.indexOf('dis') > -1) {
+            bestCombs.push({ item: obj.item, bonusType: 'dis' });
+          }
+          if (obj.bonusType.indexOf('str') > -1) {
+            bestCombs.push({ item: obj.item, bonusType: 'str' });
+          }
         }
-        if (obj.bonusType.indexOf('int') > -1) {
-          bestCombs.push({ item: obj.item, bonusType: 'int' });
-        }
-        if (obj.bonusType.indexOf('dis') > -1) {
-          bestCombs.push({ item: obj.item, bonusType: 'dis' });
-        }
-        if (obj.bonusType.indexOf('str') > -1) {
-          bestCombs.push({ item: obj.item, bonusType: 'str' });
-        }
-      });
+      );
       armor[armortype] = bestCombs;
     }
     return armor;
   }
 
-  function getActiveHighestSets(setMap: typeof this.highestsets, activeSets: typeof this.activesets): SetType[] {
+  function getActiveHighestSets(
+    setMap: typeof this.highestsets,
+    activeSets: typeof this.activesets
+  ): SetType[] {
     let count = 0;
     const topSets: SetType[] = [];
     Object.values(setMap).forEach((setType) => {
@@ -364,15 +479,20 @@ function LoadoutBuilderController(
   }
 
   function getItemById(id, type): D1Item | undefined {
-    return buckets[vm.active][type].find((i) => i.id === id) ||
-      vendorBuckets[vm.active][type].find((i) => i.index === id);
+    return (
+      buckets[vm.active][type].find((i) => i.id === id) ||
+      vendorBuckets[vm.active][type].find((i) => i.index === id)
+    );
   }
 
   function alreadyExists(set: D1Item[], id: string) {
-    return _.findWhere(set, { id }) || _.findWhere(set, { index: id });
+    return _.find(set, { id }) || _.find(set, { index: id });
   }
 
-  function mergeBuckets<T>(bucket1: { [armorType in ArmorTypes]: T }, bucket2: { [armorType in ArmorTypes]: T }): { [armorType in ArmorTypes]: T } {
+  function mergeBuckets<T>(
+    bucket1: { [armorType in ArmorTypes]: T },
+    bucket2: { [armorType in ArmorTypes]: T }
+  ): { [armorType in ArmorTypes]: T } {
     const merged = {};
     _.each(_.keys(bucket1), (type) => {
       merged[type] = bucket1[type].concat(bucket2[type]);
@@ -380,24 +500,36 @@ function LoadoutBuilderController(
     return merged as { [armorType in ArmorTypes]: T };
   }
 
-  function getActiveBuckets<T>(bucket1: { [armorType in ArmorTypes]: T }, bucket2: { [armorType in ArmorTypes]: T }, merge: boolean): { [armorType in ArmorTypes]: T } {
+  function getActiveBuckets<T>(
+    bucket1: { [armorType in ArmorTypes]: T },
+    bucket2: { [armorType in ArmorTypes]: T },
+    merge: boolean
+  ): { [armorType in ArmorTypes]: T } {
     // Merge both buckets or return bucket1 if merge is false
-    return (merge) ? mergeBuckets(bucket1, bucket2) : bucket1;
+    return merge ? mergeBuckets(bucket1, bucket2) : bucket1;
   }
 
   function filterLoadoutToEquipped(loadout: Loadout) {
     const filteredLoadout = copy(loadout);
-    filteredLoadout.items = _.mapObject(filteredLoadout.items, (items) => {
+    filteredLoadout.items = _.mapValues(filteredLoadout.items, (items) => {
       return items.filter((i) => i.equipped);
     });
     return filteredLoadout;
   }
 
   getDefinitions().then((defs) => {
-    extend(vm, {
+    Object.assign(vm, {
       active: 'titan',
-      i18nClassNames: _.object(['titan', 'hunter', 'warlock'], _.sortBy(Object.values(defs.Class), (classDef) => classDef.classType).map((c) => c.className)),
-      i18nItemNames: _.object(['Helmet', 'Gauntlets', 'Chest', 'Leg', 'ClassItem', 'Artifact', 'Ghost'], [45, 46, 47, 48, 49, 38, 39].map((key) => defs.ItemCategory.get(key).title)),
+      i18nClassNames: _.zipObject(
+        ['titan', 'hunter', 'warlock'],
+        _.sortBy(Object.values(defs.Class), (classDef) => classDef.classType).map(
+          (c: any) => c.className
+        )
+      ),
+      i18nItemNames: _.zipObject(
+        ['Helmet', 'Gauntlets', 'Chest', 'Leg', 'ClassItem', 'Artifact', 'Ghost'],
+        [45, 46, 47, 48, 49, 38, 39].map((key) => defs.ItemCategory.get(key).title)
+      ),
       activesets: '5/5/2',
       type: 'Helmet',
       scaleType: 'scaled',
@@ -415,8 +547,24 @@ function LoadoutBuilderController(
       activePerks: {},
       excludeditems: [],
       collapsedConfigs: [false, false, false, false, false, false, false, false, false, false],
-      lockeditems: { Helmet: null, Gauntlets: null, Chest: null, Leg: null, ClassItem: null, Artifact: null, Ghost: null },
-      lockedperks: { Helmet: {}, Gauntlets: {}, Chest: {}, Leg: {}, ClassItem: {}, Artifact: {}, Ghost: {} },
+      lockeditems: {
+        Helmet: null,
+        Gauntlets: null,
+        Chest: null,
+        Leg: null,
+        ClassItem: null,
+        Artifact: null,
+        Ghost: null
+      },
+      lockedperks: {
+        Helmet: {},
+        Gauntlets: {},
+        Chest: {},
+        Leg: {},
+        ClassItem: {},
+        Artifact: {},
+        Ghost: {}
+      },
       setOrderValues: ['-str_val', '-dis_val', '-int_val'],
       lockedItemsValid(droppedId: string, droppedType: ArmorTypes) {
         droppedId = getId(droppedId);
@@ -425,14 +573,23 @@ function LoadoutBuilderController(
         }
 
         const item = getItemById(droppedId, droppedType)!;
-        const startCount: number = ((item.isExotic && item.type !== 'ClassItem') ? 1 : 0);
+        const startCount: number = item.isExotic && item.type !== 'ClassItem' ? 1 : 0;
         return (
           startCount +
-          (droppedType !== 'Helmet' && vm.lockeditems.Helmet && vm.lockeditems.Helmet.isExotic ? 1 : 0) +
-          (droppedType !== 'Gauntlets' && vm.lockeditems.Gauntlets && vm.lockeditems.Gauntlets.isExotic ? 1 : 0) +
-          (droppedType !== 'Chest' && vm.lockeditems.Chest && vm.lockeditems.Chest.isExotic ? 1 : 0) +
-          (droppedType !== 'Leg' && vm.lockeditems.Leg && vm.lockeditems.Leg.isExotic ? 1 : 0)
-        ) < 2;
+            (droppedType !== 'Helmet' && vm.lockeditems.Helmet && vm.lockeditems.Helmet.isExotic
+              ? 1
+              : 0) +
+            (droppedType !== 'Gauntlets' &&
+            vm.lockeditems.Gauntlets &&
+            vm.lockeditems.Gauntlets.isExotic
+              ? 1
+              : 0) +
+            (droppedType !== 'Chest' && vm.lockeditems.Chest && vm.lockeditems.Chest.isExotic
+              ? 1
+              : 0) +
+            (droppedType !== 'Leg' && vm.lockeditems.Leg && vm.lockeditems.Leg.isExotic ? 1 : 0) <
+          2
+        );
       },
       excludedItemsValid(droppedId: string, droppedType: ArmorTypes) {
         const lockedItem = vm.lockeditems[droppedType];
@@ -440,19 +597,49 @@ function LoadoutBuilderController(
       },
       onSelectedChange(prevIdx, selectedIdx) {
         if (vm.activeCharacters[prevIdx].class !== vm.activeCharacters[selectedIdx].class) {
-          vm.active = vm.activeCharacters[selectedIdx].class;
+          const classType = vm.activeCharacters[selectedIdx].class;
+          if (classType !== 'vault') {
+            vm.active = classType;
+          }
           vm.onCharacterChange();
           vm.selectedCharacter = selectedIdx;
         }
       },
       onCharacterChange() {
-        vm.ranked = getActiveBuckets(buckets[vm.active], vendorBuckets[vm.active], vm.includeVendors);
+        vm.ranked = getActiveBuckets(
+          buckets[vm.active],
+          vendorBuckets[vm.active],
+          vm.includeVendors
+        );
         vm.activeCharacters = D1StoresService.getStores().filter((s) => !s.isVault);
         const activeStore = D1StoresService.getActiveStore()!;
-        vm.selectedCharacter = _.findIndex(vm.activeCharacters, (char) => char.id === activeStore.id);
-        vm.activePerks = getActiveBuckets(perks[vm.active], vendorPerks[vm.active], vm.includeVendors);
-        vm.lockeditems = { Helmet: null, Gauntlets: null, Chest: null, Leg: null, ClassItem: null, Artifact: null, Ghost: null };
-        vm.lockedperks = { Helmet: {}, Gauntlets: {}, Chest: {}, Leg: {}, ClassItem: {}, Artifact: {}, Ghost: {} };
+        vm.selectedCharacter = _.findIndex(
+          vm.activeCharacters,
+          (char) => char.id === activeStore.id
+        );
+        vm.activePerks = getActiveBuckets(
+          perks[vm.active],
+          vendorPerks[vm.active],
+          vm.includeVendors
+        );
+        vm.lockeditems = {
+          Helmet: null,
+          Gauntlets: null,
+          Chest: null,
+          Leg: null,
+          ClassItem: null,
+          Artifact: null,
+          Ghost: null
+        };
+        vm.lockedperks = {
+          Helmet: {},
+          Gauntlets: {},
+          Chest: {},
+          Leg: {},
+          ClassItem: {},
+          Artifact: {},
+          Ghost: {}
+        };
         vm.excludeditems = vm.excludeditems.filter((item: D1Item) => item.hash === 2672107540);
         vm.activesets = '';
         vm.highestsets = vm.getSetBucketsStep(vm.active);
@@ -464,7 +651,11 @@ function LoadoutBuilderController(
         vm.highestsets = vm.getSetBucketsStep(vm.active);
       },
       onIncludeVendorsChange() {
-        vm.activePerks = getActiveBuckets(perks[vm.active], vendorPerks[vm.active], vm.includeVendors);
+        vm.activePerks = getActiveBuckets(
+          perks[vm.active],
+          vendorPerks[vm.active],
+          vm.includeVendors
+        );
         if (vm.includeVendors) {
           vm.ranked = mergeBuckets(buckets[vm.active], vendorBuckets[vm.active]);
         } else {
@@ -483,8 +674,8 @@ function LoadoutBuilderController(
 
           // Filter any vendor perks from locked perks
           _.each(vm.lockedperks, (perkMap, type) => {
-            vm.lockedperks[type] = _.omit(perkMap, (_perk, perkHash) => {
-              return _.findWhere(vendorPerks[vm.active][type], { hash: Number(perkHash) });
+            vm.lockedperks[type] = _.omitBy(perkMap, (_perk, perkHash) => {
+              return _.find(vendorPerks[vm.active][type], { hash: Number(perkHash) });
             });
           });
         }
@@ -493,13 +684,21 @@ function LoadoutBuilderController(
       onPerkLocked(perk: D1GridNode, type: ArmorTypes, $event) {
         const lockedPerk = vm.lockedperks[type][perk.hash];
         const activeType = $event.shiftKey
-          ? (lockedPerk && lockedPerk.lockType === 'and') ? 'none' : 'and'
-          : (lockedPerk && lockedPerk.lockType === 'or') ? 'none' : 'or';
+          ? lockedPerk && lockedPerk.lockType === 'and'
+            ? 'none'
+            : 'and'
+          : lockedPerk && lockedPerk.lockType === 'or'
+          ? 'none'
+          : 'or';
 
         if (activeType === 'none') {
           delete vm.lockedperks[type][perk.hash];
         } else {
-          vm.lockedperks[type][perk.hash] = { icon: perk.icon, description: perk.description, lockType: activeType };
+          vm.lockedperks[type][perk.hash] = {
+            icon: perk.icon,
+            description: perk.description,
+            lockType: activeType
+          };
         }
         vm.highestsets = vm.getSetBucketsStep(vm.active);
         if (vm.progress < 1) {
@@ -531,7 +730,10 @@ function LoadoutBuilderController(
       },
       onExcludedDrop(droppedId, type) {
         droppedId = getId(droppedId);
-        if (alreadyExists(vm.excludeditems, droppedId) || (vm.lockeditems[type] && alreadyExists([vm.lockeditems[type]], droppedId))) {
+        if (
+          alreadyExists(vm.excludeditems, droppedId) ||
+          (vm.lockeditems[type] && alreadyExists([vm.lockeditems[type]], droppedId))
+        ) {
           return;
         }
         const item = getItemById(droppedId, type)!;
@@ -542,7 +744,9 @@ function LoadoutBuilderController(
         }
       },
       onExcludedRemove(removedIndex) {
-        vm.excludeditems = vm.excludeditems.filter((excludeditem) => excludeditem.index !== removedIndex);
+        vm.excludeditems = vm.excludeditems.filter(
+          (excludeditem) => excludeditem.index !== removedIndex
+        );
         vm.highestsets = vm.getSetBucketsStep(vm.active);
         if (vm.progress < 1) {
           vm.excludedchanged = true;
@@ -550,30 +754,40 @@ function LoadoutBuilderController(
       },
       lockEquipped() {
         const store = vm.activeCharacters[vm.selectedCharacter];
-        const loadout = filterLoadoutToEquipped(store.loadoutFromCurrentlyEquipped(""));
-        const items = _.pick(loadout.items,
-                               'helmet',
-                               'gauntlets',
-                               'chest',
-                               'leg',
-                               'classitem',
-                               'artifact',
-                               'ghost');
+        const loadout = filterLoadoutToEquipped(store.loadoutFromCurrentlyEquipped(''));
+        const items = _.pick(
+          loadout.items,
+          'helmet',
+          'gauntlets',
+          'chest',
+          'leg',
+          'classitem',
+          'artifact',
+          'ghost'
+        );
         // Do not lock items with no stats
-        vm.lockeditems.Helmet = items.helmet[0].stats ? items.helmet[0] : null;
-        vm.lockeditems.Gauntlets = items.gauntlets[0].stats ? items.gauntlets[0] : null;
-        vm.lockeditems.Chest = items.chest[0].stats ? items.chest[0] : null;
-        vm.lockeditems.Leg = items.leg[0].stats ? items.leg[0] : null;
-        vm.lockeditems.ClassItem = items.classitem[0].stats ? items.classitem[0] : null;
-        vm.lockeditems.Artifact = items.artifact[0].stats ? items.artifact[0] : null;
-        vm.lockeditems.Ghost = items.ghost[0].stats ? items.ghost[0] : null;
+        vm.lockeditems.Helmet = items.helmet[0].stats ? (items.helmet[0] as D1Item) : null;
+        vm.lockeditems.Gauntlets = items.gauntlets[0].stats ? (items.gauntlets[0] as D1Item) : null;
+        vm.lockeditems.Chest = items.chest[0].stats ? (items.chest[0] as D1Item) : null;
+        vm.lockeditems.Leg = items.leg[0].stats ? (items.leg[0] as D1Item) : null;
+        vm.lockeditems.ClassItem = items.classitem[0].stats ? (items.classitem[0] as D1Item) : null;
+        vm.lockeditems.Artifact = items.artifact[0].stats ? (items.artifact[0] as D1Item) : null;
+        vm.lockeditems.Ghost = items.ghost[0].stats ? (items.ghost[0] as D1Item) : null;
         vm.highestsets = vm.getSetBucketsStep(vm.active);
         if (vm.progress < 1) {
           vm.lockedchanged = true;
         }
       },
       clearLocked() {
-        vm.lockeditems = { Helmet: null, Gauntlets: null, Chest: null, Leg: null, ClassItem: null, Artifact: null, Ghost: null };
+        vm.lockeditems = {
+          Helmet: null,
+          Gauntlets: null,
+          Chest: null,
+          Leg: null,
+          ClassItem: null,
+          Artifact: null,
+          Ghost: null
+        };
         vm.activesets = '';
         vm.highestsets = vm.getSetBucketsStep(vm.active);
         if (vm.progress < 1) {
@@ -582,30 +796,41 @@ function LoadoutBuilderController(
       },
       newLoadout(set) {
         ngDialog.closeAll();
-        const loadout: Loadout = {
-          name: '',
-          items: {},
-          classType: ({ warlock: 0, titan: 1, hunter: 2 })[vm.active]
-        };
-        const items = _.pick(set.armor, 'Helmet', 'Chest', 'Gauntlets', 'Leg', 'ClassItem', 'Ghost', 'Artifact');
+        const loadout = newLoadout('', {});
+        loadout.classType = LoadoutClass[vm.active];
+        const items = _.pick(
+          set.armor,
+          'Helmet',
+          'Chest',
+          'Gauntlets',
+          'Leg',
+          'ClassItem',
+          'Ghost',
+          'Artifact'
+        );
         _.each(items, (itemContainer: any, itemType) => {
           loadout.items[itemType.toString().toLowerCase()] = [itemContainer.item];
         });
 
-        $scope.$broadcast('dim-edit-loadout', {
-          loadout,
+        dimLoadoutService.editLoadout(loadout, {
           equipAll: true,
           showClass: false
         });
       },
       equipItems(set) {
         ngDialog.closeAll();
-        let loadout: Loadout = {
-          items: {},
-          name: $i18next.t('Loadouts.AppliedAuto'),
-          classType: ({ warlock: 0, titan: 1, hunter: 2 })[vm.active]
-        };
-        const items = _.pick(set.armor, 'Helmet', 'Chest', 'Gauntlets', 'Leg', 'ClassItem', 'Ghost', 'Artifact');
+        let loadout: Loadout = newLoadout($i18next.t('Loadouts.AppliedAuto'), {});
+        loadout.classType = LoadoutClass[vm.active];
+        const items = _.pick(
+          set.armor,
+          'Helmet',
+          'Chest',
+          'Gauntlets',
+          'Leg',
+          'ClassItem',
+          'Ghost',
+          'Artifact'
+        );
         loadout.items.helmet = [items.Helmet.item];
         loadout.items.chest = [items.Chest.item];
         loadout.items.gauntlets = [items.Gauntlets.item];
@@ -620,10 +845,20 @@ function LoadoutBuilderController(
           val[0].equipped = true;
         });
 
-        return dimLoadoutService.applyLoadout(vm.activeCharacters[vm.selectedCharacter], loadout, true);
+        return dimLoadoutService.applyLoadout(
+          vm.activeCharacters[vm.selectedCharacter],
+          loadout,
+          true
+        );
       },
       getSetBucketsStep(activeGuardian: string): typeof this.highestsets | null {
-        const bestArmor: any = getBestArmor(buckets[activeGuardian], vendorBuckets[activeGuardian], vm.lockeditems, vm.excludeditems, vm.lockedperks);
+        const bestArmor: any = getBestArmor(
+          buckets[activeGuardian],
+          vendorBuckets[activeGuardian],
+          vm.lockeditems,
+          vm.excludeditems,
+          vm.lockedperks
+        );
         const helms = bestArmor.Helmet || [];
         const gaunts = bestArmor.Gauntlets || [];
         const chests = bestArmor.Chest || [];
@@ -633,7 +868,14 @@ function LoadoutBuilderController(
         const artifacts = bestArmor.Artifact || [];
         const setMap = {};
         const tiersSet = new Set<string>();
-        const combos = (helms.length * gaunts.length * chests.length * legs.length * classItems.length * ghosts.length * artifacts.length);
+        const combos =
+          helms.length *
+          gaunts.length *
+          chests.length *
+          legs.length *
+          classItems.length *
+          ghosts.length *
+          artifacts.length;
         if (combos === 0) {
           return null;
         }
@@ -648,12 +890,12 @@ function LoadoutBuilderController(
                   for (; ci < classItems.length; ++ci) {
                     for (; gh < ghosts.length; ++gh) {
                       for (; ar < artifacts.length; ++ar) {
-                        const validSet = (
+                        const validSet =
                           Number(helms[h].item.isExotic) +
                             Number(gaunts[g].item.isExotic) +
                             Number(chests[c].item.isExotic) +
-                            Number(legs[l].item.isExotic)
-                        ) < 2;
+                            Number(legs[l].item.isExotic) <
+                          2;
 
                         if (validSet) {
                           const set: ArmorSet = {
@@ -694,8 +936,8 @@ function LoadoutBuilderController(
                           const pieces = Object.values(set.armor);
                           set.setHash = genSetHash(pieces);
                           calcArmorStats(pieces, set.stats);
-                          const tiersString = `${set.stats.STAT_INTELLECT.tier
-                          }/${set.stats.STAT_DISCIPLINE.tier
+                          const tiersString = `${set.stats.STAT_INTELLECT.tier}/${
+                            set.stats.STAT_DISCIPLINE.tier
                           }/${set.stats.STAT_STRENGTH.tier}`;
 
                           tiersSet.add(tiersString);
@@ -704,25 +946,38 @@ function LoadoutBuilderController(
                           // so we reduce memory usage
                           if (setMap[set.setHash]) {
                             if (setMap[set.setHash].tiers[tiersString]) {
-                              setMap[set.setHash].tiers[tiersString].configs.push(getBonusConfig(set.armor));
+                              setMap[set.setHash].tiers[tiersString].configs.push(
+                                getBonusConfig(set.armor)
+                              );
                             } else {
-                              setMap[set.setHash].tiers[tiersString] = { stats: set.stats, configs: [getBonusConfig(set.armor)] };
+                              setMap[set.setHash].tiers[tiersString] = {
+                                stats: set.stats,
+                                configs: [getBonusConfig(set.armor)]
+                              };
                             }
                           } else {
                             setMap[set.setHash] = { set, tiers: {} };
-                            setMap[set.setHash].tiers[tiersString] = { stats: set.stats, configs: [getBonusConfig(set.armor)] };
+                            setMap[set.setHash].tiers[tiersString] = {
+                              stats: set.stats,
+                              configs: [getBonusConfig(set.armor)]
+                            };
                           }
 
-                          set.includesVendorItems = pieces.some((armor: any) => armor.item.isVendorItem);
+                          set.includesVendorItems = pieces.some(
+                            (armor: any) => armor.item.isVendorItem
+                          );
                         }
 
                         processedCount++;
-                        if (processedCount % 50000 === 0) { // do this so the page doesn't lock up
-                          if (vm.active !== activeGuardian ||
-                              vm.lockedchanged ||
-                              vm.excludedchanged ||
-                              vm.perkschanged ||
-                              !vm.transition.router.stateService.is('destiny1.loadout-builder')) {
+                        if (processedCount % 50000 === 0) {
+                          // do this so the page doesn't lock up
+                          if (
+                            vm.active !== activeGuardian ||
+                            vm.lockedchanged ||
+                            vm.excludedchanged ||
+                            vm.perkschanged ||
+                            !vm.transition.router.stateService.is('destiny1.loadout-builder')
+                          ) {
                             // If active guardian or page is changed then stop processing combinations
                             vm.lockedchanged = false;
                             vm.excludedchanged = false;
@@ -730,7 +985,20 @@ function LoadoutBuilderController(
                             return;
                           }
                           vm.progress = processedCount / combos;
-                          $timeout(step, 0, true, activeGuardian, h, g, c, l, ci, gh, ar, processedCount);
+                          $timeout(
+                            step,
+                            0,
+                            true,
+                            activeGuardian,
+                            h,
+                            g,
+                            c,
+                            l,
+                            ci,
+                            gh,
+                            ar,
+                            processedCount
+                          );
                           return;
                         }
                       }
@@ -747,15 +1015,18 @@ function LoadoutBuilderController(
             g = 0;
           }
 
-          const tiers = _.each(_.groupBy(Array.from(tiersSet.keys()), (tierString: string) => {
-            return sum(tierString.split('/'), (num) => parseInt(num, 10));
-          }), (tier) => {
-            tier.sort().reverse();
-          });
+          const tiers = _.each(
+            _.groupBy(Array.from(tiersSet.keys()), (tierString: string) => {
+              return _.sumBy(tierString.split('/'), (num) => parseInt(num, 10));
+            }),
+            (tier) => {
+              tier.sort().reverse();
+            }
+          );
 
           vm.allSetTiers = [];
           const tierKeys = Object.keys(tiers);
-          for (let t = tierKeys.length; t-- > tierKeys.length - 3;) {
+          for (let t = tierKeys.length; t > tierKeys.length - 3; t--) {
             if (tierKeys[t]) {
               vm.allSetTiers.push(`- Tier ${tierKeys[t]} -`);
               _.each(tiers[tierKeys[t]], (set) => {
@@ -768,7 +1039,18 @@ function LoadoutBuilderController(
             vm.activesets = vm.allSetTiers[1];
           }
           vm.activeHighestSets = getActiveHighestSets(setMap, vm.activesets);
-          vm.collapsedConfigs = [false, false, false, false, false, false, false, false, false, false];
+          vm.collapsedConfigs = [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+          ];
 
           // Finish progress
           vm.progress = processedCount / combos;
@@ -793,27 +1075,43 @@ function LoadoutBuilderController(
 
         function filterPerks(perks: D1GridNode[], item: D1Item) {
           // ['Infuse', 'Twist Fate', 'Reforge Artifact', 'Reforge Shell', 'Increase Intellect', 'Increase Discipline', 'Increase Strength', 'Deactivate Chroma']
-          const unwantedPerkHashes = [1270552711, 217480046, 191086989, 913963685, 1034209669, 1263323987, 193091484, 2133116599];
-          return _.chain(perks.concat(item.talentGrid!.nodes))
-                  .uniq((node) => node.hash)
-                  .reject((node) => _.contains(unwantedPerkHashes, node.hash))
-                  .value();
+          const unwantedPerkHashes = [
+            1270552711,
+            217480046,
+            191086989,
+            913963685,
+            1034209669,
+            1263323987,
+            193091484,
+            2133116599
+          ];
+          return _.uniqBy(perks.concat(item.talentGrid!.nodes), (node: any) => node.hash).filter(
+            (node: any) => !unwantedPerkHashes.includes(node.hash)
+          );
         }
 
         function filterItems(items: D1Item[]) {
           return items.filter((item) => {
-            return item.primStat &&
+            return (
+              item.primStat &&
               item.primStat.statHash === 3897883278 && // has defense hash
-              item.talentGrid && item.talentGrid.nodes &&
-              ((vm.showBlues && item.tier === 'Rare') || item.tier === 'Legendary' || (vm.showExotics && item.isExotic)) && // is legendary or exotic
-              item.stats;
+              item.talentGrid &&
+              item.talentGrid.nodes &&
+              ((vm.showBlues && item.tier === 'Rare') ||
+                item.tier === 'Legendary' ||
+                (vm.showExotics && item.isExotic)) && // is legendary or exotic
+              item.stats
+            );
           });
         }
 
         vm.selectedCharacter = D1StoresService.getActiveStore();
         vm.active = vm.selectedCharacter.class.toLowerCase() || 'warlock';
         vm.activeCharacters = _.reject(D1StoresService.getStores(), (s) => s.isVault);
-        vm.selectedCharacter = _.findIndex(vm.activeCharacters, (char) => char.id === vm.selectedCharacter.id);
+        vm.selectedCharacter = _.findIndex(
+          vm.activeCharacters,
+          (char) => char.id === vm.selectedCharacter.id
+        );
 
         let allItems: D1Item[] = [];
         let vendorItems: D1Item[] = [];
@@ -824,7 +1122,7 @@ function LoadoutBuilderController(
           const felwinters = items.filter((i) => i.hash === 2672107540);
           if (felwinters.length) {
             vm.excludeditems.push(...felwinters);
-            vm.excludeditems = _.uniq(vm.excludeditems, 'id');
+            vm.excludeditems = _.uniqBy(vm.excludeditems, (i) => i.id);
           }
 
           allItems = allItems.concat(items);
@@ -836,31 +1134,47 @@ function LoadoutBuilderController(
                 perks[classType][item.type] = filterPerks(perks[classType][item.type], item);
               });
             } else {
-              perks[item.classTypeName][item.type] = filterPerks(perks[item.classTypeName][item.type], item);
+              perks[item.classTypeName][item.type] = filterPerks(
+                perks[item.classTypeName][item.type],
+                item
+              );
             }
           });
         });
 
         // Process vendors here
         _.each(dimVendorService.vendors, (vendor: any) => {
-          const vendItems = filterItems(_.select(vendor.allItems.map((i) => i.item), (item) => item.bucket.sort === 'Armor' || item.type === 'Artifact' || item.type === 'Ghost'));
+          const vendItems = filterItems(
+            vendor.allItems
+              .map((i) => i.item)
+              .filter(
+                (item) =>
+                  item.bucket.sort === 'Armor' || item.type === 'Artifact' || item.type === 'Ghost'
+              )
+          );
           vendorItems = vendorItems.concat(vendItems);
 
           // Exclude felwinters if we have them
           const felwinters = vendorItems.filter((i) => i.hash === 2672107540);
           if (felwinters.length) {
             vm.excludeditems.push(...felwinters);
-            vm.excludeditems = _.uniq(vm.excludeditems, 'id');
+            vm.excludeditems = _.uniqBy(vm.excludeditems, (i) => i.id);
           }
 
           // Build a map of perks
           _.each(vendItems, (item) => {
             if (item.classType === 3) {
               _.each(['warlock', 'titan', 'hunter'], (classType) => {
-                vendorPerks[classType][item.type] = filterPerks(vendorPerks[classType][item.type], item);
+                vendorPerks[classType][item.type] = filterPerks(
+                  vendorPerks[classType][item.type],
+                  item
+                );
               });
             } else {
-              vendorPerks[item.classTypeName][item.type] = filterPerks(vendorPerks[item.classTypeName][item.type], item);
+              vendorPerks[item.classTypeName][item.type] = filterPerks(
+                vendorPerks[item.classTypeName][item.type],
+                item
+              );
             }
           });
         });
@@ -868,7 +1182,9 @@ function LoadoutBuilderController(
         // Remove overlapping perks in allPerks from vendorPerks
         _.each(vendorPerks, (perksWithType, classType) => {
           _.each(perksWithType, (perkArr, type) => {
-            vendorPerks[classType][type] = _.reject(perkArr, (perk: any) => _.contains(perks[classType][type].map((i) => i.hash), perk.hash));
+            vendorPerks[classType][type] = _.reject(perkArr, (perk: any) =>
+              perks[classType][type].map((i) => i.hash).includes(perk.hash)
+            );
           });
         });
 
@@ -876,7 +1192,7 @@ function LoadoutBuilderController(
           function normalizeStats(item: D1ItemWithNormalStats) {
             item.normalStats = {};
             _.each(item.stats!, (stat: any) => {
-              item.normalStats[stat.statHash] = {
+              item.normalStats![stat.statHash] = {
                 statHash: stat.statHash,
                 base: stat.base,
                 scaled: stat.scaled ? stat.scaled.min : 0,
@@ -889,34 +1205,54 @@ function LoadoutBuilderController(
           }
           function getBuckets(items: D1Item[]): ItemBucket {
             return {
-              Helmet: items.filter((item) => {
-                return item.type === 'Helmet';
-              }).map(normalizeStats),
-              Gauntlets: items.filter((item) => {
-                return item.type === 'Gauntlets';
-              }).map(normalizeStats),
-              Chest: items.filter((item) => {
-                return item.type === 'Chest';
-              }).map(normalizeStats),
-              Leg: items.filter((item) => {
-                return item.type === 'Leg';
-              }).map(normalizeStats),
-              ClassItem: items.filter((item) => {
-                return item.type === 'ClassItem';
-              }).map(normalizeStats),
-              Artifact: items.filter((item) => {
-                return item.type === 'Artifact';
-              }).map(normalizeStats),
-              Ghost: items.filter((item) => {
-                return item.type === 'Ghost';
-              }).map(normalizeStats)
+              Helmet: items
+                .filter((item) => {
+                  return item.type === 'Helmet';
+                })
+                .map(normalizeStats),
+              Gauntlets: items
+                .filter((item) => {
+                  return item.type === 'Gauntlets';
+                })
+                .map(normalizeStats),
+              Chest: items
+                .filter((item) => {
+                  return item.type === 'Chest';
+                })
+                .map(normalizeStats),
+              Leg: items
+                .filter((item) => {
+                  return item.type === 'Leg';
+                })
+                .map(normalizeStats),
+              ClassItem: items
+                .filter((item) => {
+                  return item.type === 'ClassItem';
+                })
+                .map(normalizeStats),
+              Artifact: items
+                .filter((item) => {
+                  return item.type === 'Artifact';
+                })
+                .map(normalizeStats),
+              Ghost: items
+                .filter((item) => {
+                  return item.type === 'Ghost';
+                })
+                .map(normalizeStats)
             };
           }
           function loadBucket(classType: DestinyClass, useVendorItems = false): ItemBucket {
-            const items = (useVendorItems) ? vendorItems : allItems;
-            return getBuckets(items.filter((item) => {
-              return (item.classType === classType || item.classType === 3) && item.stats && item.stats.length;
-            }));
+            const items = useVendorItems ? vendorItems : allItems;
+            return getBuckets(
+              items.filter((item) => {
+                return (
+                  (item.classType === classType || item.classType === 3) &&
+                  item.stats &&
+                  item.stats.length
+                );
+              })
+            );
           }
           buckets = {
             titan: loadBucket(0),
@@ -948,10 +1284,34 @@ function LoadoutBuilderController(
   };
 
   this.$onChanges = () => {
-    vm.activePerks = { Helmet: [], Gauntlets: [], Chest: [], Leg: [], ClassItem: [], Artifact: [], Ghost: [] };
+    vm.activePerks = {
+      Helmet: [],
+      Gauntlets: [],
+      Chest: [],
+      Leg: [],
+      ClassItem: [],
+      Artifact: [],
+      Ghost: []
+    };
     vm.excludeditems = [];
-    vm.lockeditems = { Helmet: null, Gauntlets: null, Chest: null, Leg: null, ClassItem: null, Artifact: null, Ghost: null };
-    vm.lockedperks = { Helmet: {}, Gauntlets: {}, Chest: {}, Leg: {}, ClassItem: {}, Artifact: {}, Ghost: {} };
+    vm.lockeditems = {
+      Helmet: null,
+      Gauntlets: null,
+      Chest: null,
+      Leg: null,
+      ClassItem: null,
+      Artifact: null,
+      Ghost: null
+    };
+    vm.lockedperks = {
+      Helmet: {},
+      Gauntlets: {},
+      Chest: {},
+      Leg: {},
+      ClassItem: {},
+      Artifact: {},
+      Ghost: {}
+    };
     if (vm.getItems) {
       vm.getItems();
     }

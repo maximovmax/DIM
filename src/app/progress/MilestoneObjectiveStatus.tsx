@@ -1,11 +1,7 @@
-
-import {
-  DestinyObjectiveProgress,
-  DestinyQuestStatus,
-} from 'bungie-api-ts/destiny2';
+import { DestinyObjectiveProgress, DestinyQuestStatus } from 'bungie-api-ts/destiny2';
 import * as React from 'react';
 import { D2ManifestDefinitions } from '../destiny2/d2-definitions.service';
-import { settings } from '../settings/settings';
+import { completedIcon, AppIcon } from '../shell/icons';
 
 /**
  * The display for a milestone quest's objective. Either a count to be shown under the icon, or a
@@ -34,10 +30,13 @@ export default function MilestoneObjectiveStatus({
     }
 
     if (status.completed) {
-      return <span><i className="fa fa-check-circle-o"/></span>;
+      return (
+        <span>
+          <AppIcon icon={completedIcon} />
+        </span>
+      );
     } else if (completionValue > 1) {
-      const formatter = new Intl.NumberFormat(settings.language);
-      return <span>{formatter.format(progress)}<wbr/>/<wbr/>{formatter.format(completionValue)}</span>;
+      return <span>{Math.round((progress / completionValue) * 100)}%</span>;
     }
   }
 

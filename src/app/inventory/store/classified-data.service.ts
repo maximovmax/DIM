@@ -1,5 +1,6 @@
-import * as idbKeyval from 'idb-keyval';
+import { get, set } from 'idb-keyval';
 import { settings } from '../../settings/settings';
+import { handleLocalStorageFullError } from '../../compatibility';
 
 let classifiedDataPromise: Promise<ClassifiedData> | undefined;
 
@@ -36,25 +37,24 @@ export function getClassifiedData(): Promise<ClassifiedData> {
     return classifiedDataPromise;
   }
 
-  classifiedDataPromise = idbKeyval.get('classified-data').then((data: ClassifiedData) => {
+  classifiedDataPromise = get('classified-data').then((data: ClassifiedData) => {
     // Use cached data for up to 4 hours
-    if ($DIM_FLAVOR !== 'dev' &&
-      data &&
-      data.time && data.time > Date.now() - (4 * 60 * 60 * 1000)) {
+    if ($DIM_FLAVOR !== 'dev' && data && data.time && data.time > Date.now() - 4 * 60 * 60 * 1000) {
       return data;
     }
 
     // In dev, use a local copy of the JSON for testing
-    const url = ($DIM_FLAVOR === 'dev')
-      ? '/data/classified.json'
-      : 'https://beta.destinyitemmanager.com/data/classified.json';
+    const url =
+      $DIM_FLAVOR === 'dev'
+        ? '/data/classified.json'
+        : 'https://beta.destinyitemmanager.com/data/classified.json';
 
     return Promise.resolve(fetch(url))
-      .then((response) => response.ok ? response.json() : Promise.reject(response))
+      .then((response) => (response.ok ? response.json() : Promise.reject(response)))
       .then((remoteData: ClassifiedData) => {
         remoteData.time = Date.now();
         // Don't wait for the set - for some reason this was hanging
-        idbKeyval.set('classified-data', remoteData);
+        set('classified-data', remoteData).catch(handleLocalStorageFullError);
         return remoteData;
       })
       .catch((e) => {
@@ -71,7 +71,8 @@ export function getClassifiedData(): Promise<ClassifiedData> {
 
 export function buildClassifiedItem(classifiedData: ClassifiedData, hash: string) {
   const info = classifiedData.itemHash[hash];
-  if (info) { // do we have declassification info for item?
+  if (info) {
+    // do we have declassification info for item?
     const localInfo = info.i18n[settings.language];
     const classifiedItem: any = {
       classified: true,

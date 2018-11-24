@@ -1,7 +1,5 @@
-import * as _ from 'underscore';
+import * as _ from 'lodash';
 import { D1ManifestService } from '../manifest/manifest-service';
-import { $q } from 'ngimport';
-import { IPromise } from 'angular';
 
 const lazyTables = [
   'InventoryItem',
@@ -20,13 +18,7 @@ const lazyTables = [
   'ActivityType'
 ];
 
-const eagerTables = [
-  'InventoryBucket',
-  'Class',
-  'Race',
-  'Faction',
-  'Vendor'
-];
+const eagerTables = ['InventoryBucket', 'Class', 'Race', 'Faction', 'Vendor'];
 
 export interface LazyDefinition<T> {
   get(hash: number): T;
@@ -61,36 +53,34 @@ export interface D1ManifestDefinitions {
  * objet that has a property named after each of the tables listed
  * above (defs.TalentGrid, etc.).
  */
-export const getDefinitions: () => IPromise<D1ManifestDefinitions> = _.memoize(() => {
-  return $q.when(D1ManifestService.getManifest()
-    .then((db) => {
-      const defs = {};
+export const getDefinitions = _.once(getUncachedDefinitions);
 
-      // Load objects that lazily load their properties from the sqlite DB.
-      lazyTables.forEach((tableShort) => {
-        const table = `Destiny${tableShort}Definition`;
-        defs[tableShort] = {
-          get(name) {
-            if (this.hasOwnProperty(name)) {
-              return this[name];
-            }
-            const val = D1ManifestService.getRecord(db, table, name);
-            this[name] = val;
-            return val;
+async function getUncachedDefinitions() {
+  try {
+    const db = await D1ManifestService.getManifest();
+    const defs = {};
+    // Load objects that lazily load their properties from the sqlite DB.
+    lazyTables.forEach((tableShort) => {
+      const table = `Destiny${tableShort}Definition`;
+      defs[tableShort] = {
+        get(name) {
+          if (this.hasOwnProperty(name)) {
+            return this[name];
           }
-        };
-      });
-
-      // Resources that need to be fully loaded (because they're iterated over)
-      eagerTables.forEach((tableShort) => {
-        const table = `Destiny${tableShort}Definition`;
-        defs[tableShort] = D1ManifestService.getAllRecords(db, table);
-      });
-
-      return defs;
-    })
-    .catch((e) => {
-      console.error(e);
-      return $q.reject(e);
-    }));
-}) as () => IPromise<D1ManifestDefinitions>;
+          const val = D1ManifestService.getRecord(db, table, name);
+          this[name] = val;
+          return val;
+        }
+      };
+    });
+    // Resources that need to be fully loaded (because they're iterated over)
+    eagerTables.forEach((tableShort) => {
+      const table = `Destiny${tableShort}Definition`;
+      defs[tableShort] = D1ManifestService.getAllRecords(db, table);
+    });
+    return defs as D1ManifestDefinitions;
+  } catch (e) {
+    console.error(e);
+    throw e;
+  }
+}

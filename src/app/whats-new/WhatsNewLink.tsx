@@ -4,9 +4,10 @@ import Link from '../shell/Link';
 import { alerts$ } from './BungieAlerts';
 import { GlobalAlert } from '../bungie-api/bungie-core-api';
 import './WhatsNewLink.scss';
-import { Subscription } from 'rxjs/Subscription';
 import { t } from 'i18next';
 import { dimNeedsUpdate$ } from '../../register-service-worker';
+import { AppIcon, updateIcon } from '../shell/icons';
+import { Subscriptions } from '../rx-utils';
 
 interface State {
   dimNeedsUpdate: boolean;
@@ -18,7 +19,7 @@ interface State {
  * A link/button to the "What's New" page that highlights the most important action.
  */
 export default class WhatsNewLink extends React.Component<{}, State> {
-  private subscriptions = [] as Subscription[];
+  private subscriptions = new Subscriptions();
 
   constructor(props) {
     super(props);
@@ -30,20 +31,15 @@ export default class WhatsNewLink extends React.Component<{}, State> {
   }
 
   componentDidMount() {
-    this.subscriptions = [
-      DimVersions.showChangelog$.subscribe((showChangelog) =>
-        this.setState({ showChangelog })
-      ),
+    this.subscriptions.add(
+      DimVersions.showChangelog$.subscribe((showChangelog) => this.setState({ showChangelog })),
       alerts$.subscribe((alerts) => this.setState({ alerts })),
-      dimNeedsUpdate$.subscribe((dimNeedsUpdate) =>
-        this.setState({ dimNeedsUpdate })
-      )
-    ];
+      dimNeedsUpdate$.subscribe((dimNeedsUpdate) => this.setState({ dimNeedsUpdate }))
+    );
   }
 
   componentWillUnmount() {
-    this.subscriptions.forEach((s) => s.unsubscribe());
-    this.subscriptions = [];
+    this.subscriptions.unsubscribe();
   }
 
   render(): JSX.Element | null {
@@ -55,7 +51,7 @@ export default class WhatsNewLink extends React.Component<{}, State> {
     if (dimNeedsUpdate) {
       return (
         <a className="link" onClick={reloadDIM}>
-          <i className="upgrade fa fa-arrow-circle-up" />
+          <AppIcon className="upgrade" icon={updateIcon} />
           {t('Header.UpgradeDIM')}
         </a>
       );
@@ -81,6 +77,29 @@ export default class WhatsNewLink extends React.Component<{}, State> {
   }
 }
 
-function reloadDIM() {
-  window.location.reload();
+async function reloadDIM() {
+  const registration = await navigator.serviceWorker.getRegistration();
+
+  if (!registration) {
+    console.error('SW: No registration!');
+    window.location.reload();
+    return;
+  }
+
+  if (!registration.waiting) {
+    // Just to ensure registration.waiting is available before
+    // calling postMessage()
+    console.error('SW: registration.waiting is null!');
+    registration.unregister().then(() => {
+      window.location.reload();
+    });
+    return;
+  }
+
+  registration.waiting.postMessage('skipWaiting');
+
+  // insurance!
+  setTimeout(() => {
+    window.location.reload();
+  }, 2000);
 }

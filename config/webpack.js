@@ -1,19 +1,22 @@
 const webpack = require('webpack');
 
 const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const CleanWebpackPlugin = require('clean-webpack-plugin');
-const WorkboxPlugin = require('workbox-webpack-plugin');
+const { InjectManifest } = require('workbox-webpack-plugin');
 const WebpackNotifierPlugin = require('webpack-notifier');
-const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
-const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const TerserPlugin = require('terser-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const HtmlWebpackIncludeSiblingChunksPlugin = require('html-webpack-include-sibling-chunks-plugin');
 const GenerateJsonPlugin = require('generate-json-webpack-plugin');
 const CaseSensitivePathsPlugin = require('case-sensitive-paths-webpack-plugin');
+const LodashModuleReplacementPlugin = require('lodash-webpack-plugin');
 const csp = require('./content-security-policy');
 
-// const Visualizer = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+const Visualizer = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
 const NotifyPlugin = require('notify-webpack-plugin');
 
@@ -22,6 +25,15 @@ const ASSET_NAME_PATTERN = 'static/[name]-[hash:6].[ext]';
 const packageJson = require('../package.json');
 
 module.exports = (env) => {
+  if (process.env.WEBPACK_SERVE) {
+    env = 'dev';
+    if (!fs.existsSync('key.pem') || !fs.existsSync('cert.pem')) {
+      console.log('Generating certificate');
+      execSync(
+        "openssl req -newkey rsa:2048 -new -nodes -x509 -days 3650 -keyout key.pem -out cert.pem -subj '/CN=www.mydom.com/O=My Company Name LTD./C=US'"
+      );
+    }
+  }
   const isDev = env === 'dev';
   let version = packageJson.version.toString();
   if (env === 'beta' && process.env.TRAVIS_BUILD_NUMBER) {
@@ -41,11 +53,27 @@ module.exports = (env) => {
     output: {
       path: path.resolve('./dist'),
       publicPath: '/',
-      filename: '[name]-[contenthash:6].js',
-      chunkFilename: '[id]-[contenthash:6].js'
+      filename: isDev ? '[name]-[hash].js' : '[name]-[contenthash:6].js',
+      chunkFilename: isDev ? '[name]-[hash].js' : '[name]-[contenthash:6].js'
     },
 
-    stats: 'minimal',
+    // Dev server
+    serve: process.env.WEBPACK_SERVE
+      ? {
+          devMiddleware: {
+            stats: 'errors-only'
+          },
+          https: {
+            key: fs.readFileSync('key.pem'), // Private keys in PEM format.
+            cert: fs.readFileSync('cert.pem') // Cert chains in PEM format.
+          }
+        }
+      : {},
+
+    // Bail and fail hard on first error
+    bail: !isDev,
+
+    stats: isDev ? 'minimal' : 'normal',
 
     devtool: 'source-map',
 
@@ -60,19 +88,19 @@ module.exports = (env) => {
       // Extract the runtime into a separate chunk
       runtimeChunk: 'single',
       splitChunks: {
-        chunks: "all",
-        automaticNameDelimiter: "-"
+        chunks: 'all',
+        automaticNameDelimiter: '-'
       },
       minimizer: [
-        new UglifyJSPlugin({
+        new TerserPlugin({
           cache: true,
           parallel: true,
           exclude: [/sqlLib/, /sql-wasm/], // ensure the sqlLib chunk doesnt get minifed
-          uglifyOptions: {
+          terserOptions: {
             ecma: 8,
-            compress: { warnings: false, inline: 1 },
-            mangle: { safari10: true },
-            output: { comments: false }
+            compress: { warnings: false, passes: 3, toplevel: true },
+            mangle: { safari10: true, toplevel: true },
+            output: { safari10: true }
           },
           sourceMap: true
         })
@@ -90,7 +118,8 @@ module.exports = (env) => {
           options: {
             cacheDirectory: true
           }
-        }, {
+        },
+        {
           test: /\.html$/,
           exclude: /src\/views\/(about|support)\.html/,
           loader: 'html-loader',
@@ -98,62 +127,66 @@ module.exports = (env) => {
             exportAsEs6Default: true,
             minimize: true
           }
-        }, {
+        },
+        {
           test: /\.(jpg|png|eot|svg|ttf|woff(2)?)(\?v=\d+\.\d+\.\d+)?/,
           loader: 'url-loader',
           options: {
             limit: 5 * 1024, // only inline if less than 5kb
             name: ASSET_NAME_PATTERN
           }
-        }, {
+        },
+        {
           test: /\.scss$/,
           use: [
-            MiniCssExtractPlugin.loader,
+            isDev ? 'style-loader' : MiniCssExtractPlugin.loader,
             'css-loader',
             'postcss-loader',
             'sass-loader'
           ]
-        }, {
+        },
+        {
           test: /\.css$/,
-          use: [
-            MiniCssExtractPlugin.loader,
-            'css-loader'
-          ]
+          use: [isDev ? 'style-loader' : MiniCssExtractPlugin.loader, 'css-loader']
         },
         // All files with a '.ts' or '.tsx' extension will be handled by 'awesome-typescript-loader'.
         {
           test: /\.tsx?$/,
-          loader: "awesome-typescript-loader",
+          loader: 'awesome-typescript-loader',
           options: {
             useBabel: true,
+            babelCore: '@babel/core',
             useCache: true
           }
         },
         // All output '.js' files will have any sourcemaps re-processed by 'source-map-loader'.
         {
-          enforce: "pre",
-          test: /\.js$/,
-          loader: "source-map-loader"
+          enforce: 'pre',
+          test: /\.jsx?$/,
+          loader: 'source-map-loader'
         },
         {
           type: 'javascript/auto',
           test: /\.json/,
           include: /src(\/|\\)locale/,
-          use: [{
-            loader: 'file-loader',
-            options: { name: '[name]-[hash:6].[ext]' },
-          }],
+          use: [
+            {
+              loader: 'file-loader',
+              options: { name: '[name]-[hash:6].[ext]' }
+            }
+          ]
         },
+        // These static pages have a special loader setup so they get extracted to files
         {
           test: /src\/views\/(about|support)\.html$/,
           use: [
             {
               loader: 'file-loader',
-              options: { name: '[name]-[hash:6].[ext]' },
+              options: { name: '[name]-[hash:6].[ext]' }
             },
             'extract-loader',
             'html-loader'
-          ],
+          ]
         },
         {
           type: 'javascript/auto',
@@ -171,7 +204,7 @@ module.exports = (env) => {
     },
 
     resolve: {
-      extensions: ['.js', '.json', '.ts', '.tsx'],
+      extensions: ['.js', '.json', '.ts', '.tsx', '.jsx'],
 
       alias: {
         app: path.resolve('./src')
@@ -191,8 +224,8 @@ module.exports = (env) => {
       new NotifyPlugin('DIM', !isDev),
 
       new MiniCssExtractPlugin({
-        filename: "[name]-[contenthash:6].css",
-        chunkFilename: "[id]-[contenthash:6].css"
+        filename: isDev ? '[name]-[hash].css' : '[name]-[contenthash:6].css',
+        chunkFilename: isDev ? '[name]-[hash].css' : '[id]-[contenthash:6].css'
       }),
 
       // Fix some chunks not showing up in Webpack 4
@@ -229,7 +262,6 @@ module.exports = (env) => {
         }
       }),
 
-
       // Generate a version info JSON file we can poll. We could theoretically add more info here too.
       new GenerateJsonPlugin('./version.json', {
         version
@@ -240,9 +272,9 @@ module.exports = (env) => {
         { from: `./icons/${env}-extension/`, to: '../extension-dist' },
         { from: './src/manifest-webapp-6-2018.json' },
         { from: './src/manifest-webapp-6-2018-ios.json' },
-        { from: './src/data', to: 'data/' },
+        { from: './src/data', to: 'data/', ignore: ['missing_sources.json'] },
         { from: `./icons/${env}/` },
-        { from: './src/safari-pinned-tab.svg' },
+        { from: './src/safari-pinned-tab.svg' }
       ]),
 
       new webpack.DefinePlugin({
@@ -254,7 +286,9 @@ module.exports = (env) => {
         $DIM_WEB_CLIENT_ID: JSON.stringify(process.env.WEB_OAUTH_CLIENT_ID),
         $DIM_WEB_CLIENT_SECRET: JSON.stringify(process.env.WEB_OAUTH_CLIENT_SECRET),
 
-        $GOOGLE_DRIVE_CLIENT_ID: JSON.stringify('22022180893-raop2mu1d7gih97t5da9vj26quqva9dc.apps.googleusercontent.com'),
+        $GOOGLE_DRIVE_CLIENT_ID: JSON.stringify(
+          '22022180893-raop2mu1d7gih97t5da9vj26quqva9dc.apps.googleusercontent.com'
+        ),
 
         $BROWSERS: JSON.stringify(packageJson.browserslist),
 
@@ -278,14 +312,22 @@ module.exports = (env) => {
         '$featureFlags.debugSW': JSON.stringify(env !== 'release'),
         // Send exception reports to Sentry.io on beta only
         '$featureFlags.sentry': JSON.stringify(env === 'beta'),
-        // D2 Vendors
-        '$featureFlags.vendors': JSON.stringify(true),
-        // Enable vendorengrams.xyz integration
-        '$featureFlags.vendorEngrams': JSON.stringify(true)
+        // Respect the "do not track" header
+        '$featureFlags.respectDNT': JSON.stringify(env !== 'release'),
+        // Forsaken Item Tiles
+        '$featureFlags.forsakenTiles': JSON.stringify(env !== 'release'),
+        // D2 Loadout Builder
+        '$featureFlags.d2LoadoutBuilder': JSON.stringify(env !== 'release'),
+        // New Tile Style
+        '$featureFlags.tallTiles': JSON.stringify(true)
       }),
 
-      // Enable if you want to debug the size of the chunks
-      // new Visualizer(),
+      new LodashModuleReplacementPlugin({
+        collections: true,
+        memoizing: true,
+        shorthands: true,
+        flattening: true
+      })
     ],
 
     node: {
@@ -295,61 +337,50 @@ module.exports = (env) => {
     }
   };
 
-  if (isDev) {
-    config.plugins.push(new WebpackNotifierPlugin({ title: 'DIM', alwaysNotify: true, contentImage: path.join(__dirname, '../icons/release/favicon-96x96.png') }));
-
-    return config;
-  } else {
-    // Bail and fail hard on first error
-    config.bail = true;
-    config.stats = 'normal';
-
-    config.plugins.push(new CleanWebpackPlugin([
-      'dist',
-      '.awcache',
-      'node_modules/.cache'
-    ], {
-      root: path.resolve('./')
-    }));
-
-    // Tell React we're in Production mode
-    config.plugins.push(new webpack.DefinePlugin({
-      'process.env.NODE_ENV': JSON.stringify('production'),
-      'process.env': JSON.stringify({ NODE_ENV: 'production' })
-    }));
-
-    // Generate a service worker
-    config.plugins.push(new WorkboxPlugin({
-      maximumFileSizeToCacheInBytes: 5000000,
-      globPatterns: ['**/*.{html,js,css,woff2,json}', 'static/*.{png,jpg}'],
-      globIgnores: [
-        'data/**',
-        'manifest-*.js',
-        'extension-scripts/*',
-        'service-worker.js'
-      ],
-      swSrc: './dist/service-worker.js',
-      swDest: './dist/service-worker.js'
-    }));
+  // Enable if you want to debug the size of the chunks
+  if (process.env.WEBPACK_VISUALIZE) {
+    config.plugins.push(new Visualizer());
   }
 
-  // Build the service worker in an entirely separate configuration so
-  // it doesn't get name-mangled. It'll be used by the
-  // WorkboxPlugin. This lets us inline the dependencies.
-  const serviceWorker = {
-    mode: isDev ? 'development' : 'production',
+  if (isDev) {
+    config.plugins.push(
+      new WebpackNotifierPlugin({
+        title: 'DIM',
+        alwaysNotify: true,
+        contentImage: path.join(__dirname, '../icons/release/favicon-96x96.png')
+      })
+    );
+  } else {
+    config.plugins.push(
+      new CleanWebpackPlugin(['dist', '.awcache', 'node_modules/.cache'], {
+        root: path.resolve('./')
+      }),
 
-    entry: {
-      'service-worker': './src/service-worker.js'
-    },
+      // Tell React we're in Production mode
+      new webpack.DefinePlugin({
+        'process.env.NODE_ENV': JSON.stringify('production'),
+        'process.env': JSON.stringify({ NODE_ENV: 'production' })
+      }),
 
-    output: {
-      path: path.resolve('./dist'),
-      filename: '[name].js'
-    },
+      // Generate a service worker
+      new InjectManifest({
+        maximumFileSizeToCacheInBytes: 5000000,
+        include: [/\.(html|js|css|woff2|json|wasm)/, /static\/.*\.(png|jpg|svg)/],
+        exclude: [
+          /sqlLib/,
+          /fontawesome-webfont.*\.svg/,
+          /version\.json/,
+          /extension-dist/,
+          /\.map$/,
+          /^manifest.*\.js(?:on)?$/
+        ],
+        swSrc: './src/service-worker.js',
+        swDest: 'service-worker.js',
+        importWorkboxFrom: 'local',
+        dontCacheBustUrlsMatching: /-[a-f0-9]{6}\./
+      })
+    );
+  }
 
-    stats: 'errors-only'
-  };
-
-  return [serviceWorker, config];
+  return config;
 };

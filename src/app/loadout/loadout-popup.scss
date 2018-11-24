@@ -13,8 +13,12 @@
   overflow: hidden;
   background-color: #222;
 
+  .loadout-global-icon {
+    padding-left: 6px;
+  }
+
   &:last-of-type {
-      border: 0;
+    border: 0;
   }
 
   &:hover {
@@ -27,13 +31,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap !important;
+    .app-icon,
     .fa {
       width: 12px;
-      margin-right: 2px;
+      margin-right: 5px;
       text-align: center;
-    }
-    img.fa {
-      transform: translateY(1px);
     }
   }
 
@@ -41,8 +43,9 @@
     padding: 0 12px;
     text-align: center;
     color: #888;
+    .app-icon,
     .fa {
-      font-size: 1.2em;
+      font-size: 13px;
     }
     &:hover {
       background-color: $blue;
@@ -55,50 +58,51 @@
   }
 
   .light {
-    font-weight: 200;
-    color: $gold;
     float: right;
-    &:before {
-      content: "\2726";
-      display: inline-block;
-      vertical-align: 7%;
-      font-size: 50%;
+    .app-icon {
+      font-size: 10px;
+      vertical-align: -0.125em;
+      margin-right: 2px !important;
+    }
+    &::before {
+      display: none;
     }
   }
+}
 
-  .badge {
-    border-radius: 50%;
-    border-radius: 10px;
-    background: $orange;
-    padding: 0 4px;
-    color: black;
-    font-size: 9px;
-  }
+.badge {
+  border-radius: 50%;
+  border-radius: 10px;
+  background: $orange;
+  padding: 0 4px;
+  color: black;
+  font-size: 9px;
 }
 
 .loadout-popup-content {
   line-height: 35px;
-  background-color: #3A4150;
-  color: #E4E4E4;
+  background-color: #3a4150;
+  color: #e4e4e4;
 }
 
-.ngdialog.loadout-popup {
+.loadout-menu {
   position: absolute;
-  display: block;
+  max-width: 230px;
   width: 100%;
   max-height: calc(100vh - 121px);
   overflow: auto;
   z-index: 2;
-  top: 0;
-  bottom: initial;
-  margin: 0;
-  padding: 0;
   color: rgba(245, 245, 245, 0.6);
   margin-bottom: 10px;
   cursor: pointer;
 
+  [role='button'] {
+    outline: none;
+  }
+
   .detached & {
-    top: 103px;
+    position: fixed;
+    top: 101px;
     z-index: 1000;
     max-height: calc(100vh - 221px);
     max-width: 230px;

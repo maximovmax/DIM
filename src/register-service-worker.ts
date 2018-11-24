@@ -1,6 +1,6 @@
-import { BehaviorSubject } from "rxjs/BehaviorSubject";
+import { BehaviorSubject } from 'rxjs/BehaviorSubject';
 import './app/rx-operators';
-import { reportException } from "./app/exceptions";
+import { reportException } from './app/exceptions';
 import { Observable } from 'rxjs/Observable';
 
 /**
@@ -22,13 +22,17 @@ const contentChanged$ = new BehaviorSubject(false);
  */
 const serverVersionChanged$ = Observable.timer(10 * 1000, 15 * 60 * 1000)
   // Fetch but swallow errors
-  .switchMap(() => Observable.fromPromise(getServerVersion()).catch(() => Observable.empty<string>()))
-  .map((version) => version !== $DIM_VERSION)
+  .switchMap(() =>
+    Observable.fromPromise(getServerVersion()).catch(() => Observable.empty<string>())
+  )
+  .map(isNewVersion)
   .distinctUntilChanged()
   // At this point the value of the observable will flip to true once and only once
-  .switchMap((needsUpdate) => needsUpdate
-    ? Observable.fromPromise(updateServiceWorker().then(() => true))
-    : Observable.of(false))
+  .switchMap((needsUpdate) =>
+    needsUpdate
+      ? Observable.fromPromise(updateServiceWorker().then(() => true))
+      : Observable.of(false)
+  )
   .shareReplay();
 
 /**
@@ -41,8 +45,7 @@ export const dimNeedsUpdate$ = Observable.combineLatest(
   serviceWorkerUpdated$,
   contentChanged$,
   (serverVersionChanged, updated, changed) => serverVersionChanged || (updated && changed)
-)
-  .distinctUntilChanged();
+).distinctUntilChanged();
 
 /**
  * If Service Workers are supported, install our Service Worker and listen for updates.
@@ -85,10 +88,21 @@ export default function registerServiceWorker() {
               // the fresh content will have been added to the cache.
               // It's the perfect time to display a "New content is
               // available; please refresh." message in your web app.
-              console.log('SW: New content is available; please refresh.');
+              console.log('SW: New content is available; please refresh. (from onupdatefound)');
               // At this point, is it really cached??
 
               serviceWorkerUpdated$.next(true);
+
+              let preventDevToolsReloadLoop;
+              navigator.serviceWorker.addEventListener('controllerchange', () => {
+                // Ensure refresh is only called once.
+                // This works around a bug in "force update on reload".
+                if (preventDevToolsReloadLoop) {
+                  return;
+                }
+                preventDevToolsReloadLoop = true;
+                window.location.reload();
+              });
             } else {
               // At this point, everything has been precached.
               // It's the perfect time to display a
@@ -106,13 +120,17 @@ export default function registerServiceWorker() {
       };
 
       updateServiceWorker = () => {
-        return registration.update().catch((err) => {
-          if ($featureFlags.debugSW) {
-            console.error('SW: Unable to update service worker.', err);
-          }
-        }).then(() => {
-          console.log('SW: New content is available; please refresh.');
-        });
+        return registration
+          .update()
+          .catch((err) => {
+            if ($featureFlags.debugSW) {
+              console.error('SW: Unable to update service worker.', err);
+            }
+          })
+          .then(() => {
+            console.log('SW: New content is available; please refresh. (from update)');
+            serviceWorkerUpdated$.next(true);
+          });
       };
     })
     .catch((err) => {
@@ -129,10 +147,23 @@ async function getServerVersion() {
   if (response.ok) {
     const data = await response.json();
     if (!data.version) {
-      throw new Error("No version property");
+      throw new Error('No version property');
     }
     return data.version as string;
   } else {
     throw response;
   }
+}
+
+function isNewVersion(version: string) {
+  const parts = version.split('.');
+  const currentVersionParts = $DIM_VERSION.split('.');
+
+  for (let i = 0; i < parts.length && i < currentVersionParts.length; i++) {
+    if (parseInt(parts[i], 10) > parseInt(currentVersionParts[i], 10)) {
+      return true;
+    }
+  }
+
+  return false;
 }

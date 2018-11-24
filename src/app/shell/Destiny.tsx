@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { UIView } from "@uirouter/react";
+import { UIView } from '@uirouter/react';
 import ManifestProgress from './ManifestProgress';
 import ActivityMonitor from '../activity-monitor/activity-monitor';
 import { $rootScope } from 'ngimport';
 import { hotkeys } from '../ngimport-more';
 import { t } from 'i18next';
-import { itemTags } from '../settings/settings';
 import { DestinyAccount } from '../accounts/destiny-account.service';
+import { itemTags } from '../inventory/dim-item-info';
 
 interface Props {
   account: DestinyAccount;
@@ -21,11 +21,12 @@ export default class Destiny extends React.Component<Props> {
   componentDidMount() {
     const hot = hotkeys.bindTo(this.$scope);
 
+    // Define some hotkeys without implementation, so they show up in the help
     hot.add({
       combo: ['i'],
       description: t('Hotkey.ToggleDetails'),
       callback() {
-        $rootScope.$broadcast('dim-toggle-item-details');
+        // Empty - this gets redefined in dimMoveItemProperties
       }
     });
     itemTags.forEach((tag) => {
@@ -36,7 +37,7 @@ export default class Destiny extends React.Component<Props> {
             tag: t(tag.label)
           }),
           callback() {
-            $rootScope.$broadcast('dim-item-tag', { tag: tag.type });
+            // Empty - this gets redefined in item-tag.component.ts
           }
         });
       }
@@ -50,9 +51,9 @@ export default class Destiny extends React.Component<Props> {
   render() {
     return (
       <>
-        <div className="store-bounds"/>
+        <div className="store-bounds" />
         <div id="content">
-          <UIView/>
+          <UIView />
         </div>
         <ManifestProgress destinyVersion={this.props.account.destinyVersion} />
         <ActivityMonitor />

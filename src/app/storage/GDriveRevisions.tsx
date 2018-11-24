@@ -1,11 +1,14 @@
 import { t } from 'i18next';
 import * as React from 'react';
-import * as _ from 'underscore';
+import * as _ from 'lodash';
 import './GDriveRevisions.scss';
 import { GDriveRevision } from './google-drive-storage';
-import { dataStats } from './storage.component';
+import { dataStats } from './data-stats';
 import { SyncService } from './sync.service';
 import { UIViewInjectedProps } from '@uirouter/react';
+import { refreshIcon, AppIcon } from '../shell/icons';
+import { initSettings } from '../settings/settings';
+import { dimLoadoutService } from '../loadout/loadout.service';
 
 interface State {
   revisions?: any;
@@ -24,15 +27,13 @@ export default class GDriveRevisions extends React.Component<UIViewInjectedProps
   render() {
     const { revisions } = this.state;
 
-    const header = (
-      <p>{t('Storage.RevisionsDescription')}</p>
-    );
+    const header = <p>{t('Storage.RevisionsDescription')}</p>;
 
     if (!revisions) {
       return (
         <div className="dim-page">
           {header}
-          <i className="fa fa-spinner fa-spin"/>
+          <AppIcon icon={refreshIcon} spinning={true} />
         </div>
       );
     }
@@ -44,13 +45,20 @@ export default class GDriveRevisions extends React.Component<UIViewInjectedProps
           <thead>
             <tr>
               <th className="revision-date">Date</th>
-              <th className="revision-controls"/>
+              <th className="revision-controls" />
             </tr>
           </thead>
           <tbody>
-            {revisions.slice(0).reverse().map((revision) =>
-              <GDriveRevisionComponent key={revision.id} revision={revision} onRestoreSuccess={this.onRestoreSuccess}/>
-            )}
+            {revisions
+              .slice(0)
+              .reverse()
+              .map((revision) => (
+                <GDriveRevisionComponent
+                  key={revision.id}
+                  revision={revision}
+                  onRestoreSuccess={this.onRestoreSuccess}
+                />
+              ))}
           </tbody>
         </table>
       </div>
@@ -64,17 +72,20 @@ export default class GDriveRevisions extends React.Component<UIViewInjectedProps
 
   private onRestoreSuccess = () => {
     this.props.transition!.router.stateService.go('settings');
-  }
+  };
 }
 
-class GDriveRevisionComponent extends React.Component<{
-  revision: GDriveRevision;
-  onRestoreSuccess(): void;
-}, {
-  content?: object;
-  loading: boolean;
-  error?: Error;
-}> {
+class GDriveRevisionComponent extends React.Component<
+  {
+    revision: GDriveRevision;
+    onRestoreSuccess(): void;
+  },
+  {
+    content?: object;
+    loading: boolean;
+    error?: Error;
+  }
+> {
   constructor(props) {
     super(props);
     this.state = {
@@ -94,20 +105,27 @@ class GDriveRevisionComponent extends React.Component<{
         <td className="revision-date">
           <div>{new Date(revision.modifiedTime).toLocaleString()}</div>
           <div>
-            {loading && <i className="fa fa-spinner fa-spin"/>}
+            {loading && <AppIcon icon={refreshIcon} spinning={true} />}
             {error && error.message}
             <ul>
-            {content && _.map(dataStats(content), (value, key) =>
-              value > 0 && <li key={key}>{t(`Storage.${key}`, { value })}</li>
-            )}
+              {content &&
+                _.map(
+                  dataStats(content),
+                  (value, key) => value > 0 && <li key={key}>{t(`Storage.${key}`, { value })}</li>
+                )}
             </ul>
           </div>
         </td>
         <td className="revision-controls">
-          {content
-            ? <button className="dim-button" onClick={this.restore}>{t('Storage.RestoreRevision')}</button>
-            : <button className="dim-button" onClick={this.getRevisionContent}>{t('Storage.LoadRevision')}</button>
-          }
+          {content ? (
+            <button className="dim-button" onClick={this.restore}>
+              {t('Storage.RestoreRevision')}
+            </button>
+          ) : (
+            <button className="dim-button" onClick={this.getRevisionContent}>
+              {t('Storage.LoadRevision')}
+            </button>
+          )}
         </td>
       </tr>
     );
@@ -116,7 +134,9 @@ class GDriveRevisionComponent extends React.Component<{
   private async getRevisionContent(): Promise<object> {
     this.setState({ loading: true, error: undefined });
     try {
-      const content = await SyncService.GoogleDriveStorage.getRevisionContent(this.props.revision.id);
+      const content = await SyncService.GoogleDriveStorage.getRevisionContent(
+        this.props.revision.id
+      );
       this.setState({ content });
       return content;
     } catch (e) {
@@ -135,6 +155,8 @@ class GDriveRevisionComponent extends React.Component<{
     if (content && confirm(t('Storage.ImportConfirm'))) {
       await SyncService.set(content!, true);
       alert(t('Storage.ImportSuccess'));
+      initSettings();
+      dimLoadoutService.getLoadouts(true);
       this.props.onRestoreSuccess();
     }
   }

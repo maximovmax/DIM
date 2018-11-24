@@ -1,0 +1,121 @@
+@import '../../scss/variables.scss';
+
+.inventory-content {
+  margin: 0 auto;
+
+  .title {
+    top: 124px;
+    z-index: 1;
+
+    .phone-portrait & {
+      top: 79px;
+    }
+  }
+
+  .section {
+    filter: var(--color-filter);
+  }
+}
+
+.store-row {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  box-sizing: border-box;
+}
+
+.store-cell {
+  flex-shrink: 0;
+  display: flex;
+  width: calc(38px + var(--item-size) + (var(--character-columns) * (var(--item-size) + 5px)));
+  flex-direction: column;
+  padding: 0 8px 0 12px;
+  box-sizing: border-box;
+
+  &.vault {
+    background-color: rgba(245, 245, 245, 0.25);
+    width: auto;
+    flex: 1;
+  }
+
+  @include phone-portrait {
+    width: 100%;
+  }
+
+  &.account-wide {
+    width: 100%;
+    @include phone-portrait {
+      width: auto;
+      flex: 1;
+    }
+    max-width: calc(
+      (38px + var(--item-size) + (var(--character-columns) * (var(--item-size) + 5px))) *
+        var(--num-characters)
+    );
+  }
+}
+.store-text {
+  padding-top: 5px;
+}
+
+.store-header {
+  position: fixed;
+  backface-visibility: hidden;
+  top: 44px;
+  left: 0;
+  width: auto;
+  z-index: 10;
+  background-color: #434444;
+  filter: var(--color-filter);
+
+  .store-cell {
+    padding: 8px 12px 4px 12px;
+  }
+
+  @supports (position: sticky) {
+    position: sticky;
+  }
+
+  &.sticky {
+    box-shadow: 0 1px 6px 0px #222;
+  }
+
+  .phone-portrait & {
+    padding-left: 0;
+    overflow: hidden;
+
+    .store-cell {
+      margin: 0;
+      width: 100%;
+      padding: 8px 0 4px 0;
+    }
+
+    > div {
+      max-width: 250px;
+      margin: 0 auto;
+      overflow: visible !important;
+      .frame {
+        overflow: visible !important;
+      }
+    }
+  }
+}
+
+.stores {
+  display: block;
+  // 77px margin to make room for the fixed header
+  margin-top: 77px;
+  @supports (position: sticky) {
+    margin-top: 0;
+  }
+}
+
+.dim-button.bucket-button {
+  align-self: center;
+  margin-top: 8px;
+  background-color: #222;
+
+  &:hover {
+    background-color: #666;
+  }
+}

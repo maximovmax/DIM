@@ -1,37 +1,67 @@
-import {
-  DestinyProfileResponse
-} from 'bungie-api-ts/destiny2';
+import { DestinyProfileResponse } from 'bungie-api-ts/destiny2';
 import * as React from 'react';
-import * as _ from 'underscore';
+import * as _ from 'lodash';
 import { DestinyAccount } from '../accounts/destiny-account.service';
-import { getKiosks } from '../bungie-api/destiny2-api';
+import { getCollections } from '../bungie-api/destiny2-api';
 import { D2ManifestDefinitions, getDefinitions } from '../destiny2/d2-definitions.service';
 import { D2ManifestService } from '../manifest/manifest-service';
 import './collections.scss';
-import { fetchRatingsForKiosks } from '../d2-vendors/vendor-ratings';
-import { Subscription } from 'rxjs/Subscription';
 import { DimStore } from '../inventory/store-types';
-import Kiosk from './Kiosk';
 import { t } from 'i18next';
-import PlugSet from './PlugSet';
 import ErrorBoundary from '../dim-ui/ErrorBoundary';
-import { DestinyTrackerService } from '../item-review/destiny-tracker.service';
 import Ornaments from './Ornaments';
 import { D2StoresService } from '../inventory/d2-stores.service';
 import { UIViewInjectedProps } from '@uirouter/react';
-import { loadingTracker } from '../ngimport-more';
-import { $rootScope } from 'ngimport';
+import { loadingTracker } from '../shell/loading-tracker';
 import Catalysts from './Catalysts';
 import { Loading } from '../dim-ui/Loading';
+import { connect } from 'react-redux';
+import { InventoryBuckets } from '../inventory/inventory-buckets';
+import { RootState } from '../store/reducers';
+import { createSelector } from 'reselect';
+import { storesSelector } from '../inventory/reducer';
+import { Subscriptions } from '../rx-utils';
+import { refresh$ } from '../shell/refresh';
+import PresentationNodeRoot from './PresentationNodeRoot';
 
-interface Props {
+interface ProvidedProps extends UIViewInjectedProps {
   account: DestinyAccount;
+}
+
+interface StoreProps {
+  buckets?: InventoryBuckets;
+  ownedItemHashes: Set<number>;
+  presentationNodeHash?: number;
+}
+
+type Props = ProvidedProps & StoreProps;
+
+const ownedItemHashesSelector = createSelector(
+  storesSelector,
+  (stores) => {
+    const ownedItemHashes = new Set<number>();
+    if (stores) {
+      for (const store of stores) {
+        for (const item of store.items) {
+          ownedItemHashes.add(item.hash);
+        }
+      }
+    }
+    return ownedItemHashes;
+  }
+);
+
+function mapStateToProps(state: RootState, ownProps: ProvidedProps): StoreProps {
+  return {
+    buckets: state.inventory.buckets,
+    ownedItemHashes: ownedItemHashesSelector(state),
+    presentationNodeHash: ownProps.transition && ownProps.transition.params().presentationNodeHash
+  };
 }
 
 interface State {
   defs?: D2ManifestDefinitions;
   profileResponse?: DestinyProfileResponse;
-  trackerService?: DestinyTrackerService;
   stores?: DimStore[];
   ownedItemHashes?: Set<number>;
 }
@@ -39,9 +69,8 @@ interface State {
 /**
  * The collections screen that shows items you can get back from the vault, like emblems and exotics.
  */
-export default class Collections extends React.Component<Props & UIViewInjectedProps, State> {
-  private storesSubscription: Subscription;
-  private $scope = $rootScope.$new(true);
+class Collections extends React.Component<Props, State> {
+  private subscriptions = new Subscriptions();
 
   constructor(props: Props) {
     super(props);
@@ -55,56 +84,54 @@ export default class Collections extends React.Component<Props & UIViewInjectedP
     const defs = await getDefinitions();
     D2ManifestService.loaded = true;
 
-    const profileResponse = await getKiosks(this.props.account);
-    this.setState({ profileResponse, defs });
+    const profileResponse = await getCollections(this.props.account);
 
-    const trackerService = await fetchRatingsForKiosks(defs, profileResponse);
-    this.setState({ trackerService });
+    // TODO: put collectibles in redux
+    // TODO: convert collectibles into DimItems
+    // TODO: bring back ratings for collections
+
+    this.setState({ profileResponse, defs });
   }
 
   componentDidMount() {
     loadingTracker.addPromise(this.loadCollections());
 
-    // We need to make a scope
-    this.$scope.$on('dim-refresh', () => {
-      loadingTracker.addPromise(this.loadCollections());
-    });
-
-    this.storesSubscription = D2StoresService.getStoresStream(this.props.account).subscribe((stores) => {
-      if (stores) {
-        const ownedItemHashes = new Set<number>();
-        for (const store of stores) {
-          for (const item of store.items) {
-            ownedItemHashes.add(item.hash);
+    this.subscriptions.add(
+      refresh$.subscribe(() => {
+        // TODO: refresh just advisors
+        D2StoresService.reloadStores();
+      }),
+      D2StoresService.getStoresStream(this.props.account).subscribe((stores) => {
+        if (stores) {
+          const ownedItemHashes = new Set<number>();
+          for (const store of stores) {
+            for (const item of store.items) {
+              ownedItemHashes.add(item.hash);
+            }
           }
+          this.setState({ stores, ownedItemHashes });
         }
-        this.setState({ stores, ownedItemHashes });
-      }
-    });
+      })
+    );
   }
 
   componentWillUnmount() {
-    this.storesSubscription.unsubscribe();
-    this.$scope.$destroy();
+    this.subscriptions.unsubscribe();
   }
 
   render() {
-    const { defs, profileResponse, trackerService, ownedItemHashes } = this.state;
-    const { account } = this.props;
+    const { buckets, ownedItemHashes, transition } = this.props;
+    const { defs, profileResponse } = this.state;
 
-    if (!profileResponse || !defs) {
-      return <div className="vendor d2-vendors dim-page"><Loading/></div>;
+    if (!profileResponse || !defs || !buckets) {
+      return (
+        <div className="vendor d2-vendors dim-page">
+          <Loading />
+        </div>
+      );
     }
 
     // TODO: a lot of this processing should happen at setState, not render?
-
-    // Note that today, there is only one kiosk vendor
-    const kioskVendors = new Set(Object.keys(profileResponse.profileKiosks.data.kioskItems));
-    _.each(profileResponse.characterKiosks.data, (kiosk) => {
-      _.each(kiosk.kioskItems, (_, kioskHash) => {
-        kioskVendors.add(kioskHash);
-      });
-    });
 
     const plugSetHashes = new Set(Object.keys(profileResponse.profilePlugSets.data.plugs));
     _.each(profileResponse.characterPlugSets.data, (plugSet) => {
@@ -113,49 +140,45 @@ export default class Collections extends React.Component<Props & UIViewInjectedP
       });
     });
 
+    const presentationNodeHash = transition && transition.params().presentationNodeHash;
+
     return (
       <div className="vendor d2-vendors dim-page">
-        <ErrorBoundary name="Ornaments">
-          <Ornaments
-            defs={defs}
-            profileResponse={profileResponse}
-          />
-        </ErrorBoundary>
         <ErrorBoundary name="Catalysts">
-          <Catalysts
-            defs={defs}
-            profileResponse={profileResponse}
-          />
+          <Catalysts defs={defs} buckets={buckets} profileResponse={profileResponse} />
         </ErrorBoundary>
-        <ErrorBoundary name="Kiosks">
-          {Array.from(kioskVendors).map((vendorHash) =>
-            <Kiosk
-              key={vendorHash}
+        <ErrorBoundary name="Ornaments">
+          <Ornaments defs={defs} buckets={buckets} profileResponse={profileResponse} />
+        </ErrorBoundary>
+        <ErrorBoundary name="Collections">
+          <div className="vendor-row no-badge">
+            <h3 className="category-title">{t('Vendors.Collections')}</h3>
+            <PresentationNodeRoot
+              presentationNodeHash={3790247699}
               defs={defs}
-              vendorHash={Number(vendorHash)}
-              items={itemsForKiosk(profileResponse, Number(vendorHash))}
-              trackerService={trackerService}
+              profileResponse={profileResponse}
+              buckets={buckets}
               ownedItemHashes={ownedItemHashes}
-              account={account}
+              plugSetHashes={plugSetHashes}
+              openedPresentationHash={presentationNodeHash}
             />
-          )}
-        </ErrorBoundary>
-        <ErrorBoundary name="PlugSets">
-          {Array.from(plugSetHashes).map((plugSetHash) =>
-            <PlugSet
-              key={plugSetHash}
-              defs={defs}
-              plugSetHash={Number(plugSetHash)}
-              items={itemsForPlugSet(profileResponse, Number(plugSetHash))}
-              trackerService={trackerService}
-            />
-          )}
+          </div>
         </ErrorBoundary>
         <div className="collections-partners">
-          <a className="collections-partner dim-button" target="_blank" rel="noopener" href="https://destinysets.com">
+          <a
+            className="collections-partner dim-button"
+            target="_blank"
+            rel="noopener"
+            href="https://destinysets.com"
+          >
             {t('Vendors.DestinySets')}
           </a>
-          <a className="collections-partner dim-button" target="_blank" rel="noopener" href="https://lowlidev.com.au/destiny/maps">
+          <a
+            className="collections-partner dim-button"
+            target="_blank"
+            rel="noopener"
+            href="https://lowlidev.com.au/destiny/maps"
+          >
             {t('Vendors.DestinyMap')}
           </a>
         </div>
@@ -164,10 +187,4 @@ export default class Collections extends React.Component<Props & UIViewInjectedP
   }
 }
 
-function itemsForKiosk(profileResponse: DestinyProfileResponse, vendorHash: number) {
-  return profileResponse.profileKiosks.data.kioskItems[vendorHash].concat(_.flatten(Object.values(profileResponse.characterKiosks.data).map((d) => d.kioskItems[vendorHash])));
-}
-
-function itemsForPlugSet(profileResponse: DestinyProfileResponse, plugSetHash: number) {
-  return profileResponse.profilePlugSets.data.plugs[plugSetHash].concat(_.flatten(Object.values(profileResponse.characterPlugSets.data).map((d) => d.plugs[plugSetHash])));
-}
+export default connect<StoreProps>(mapStateToProps)(Collections);

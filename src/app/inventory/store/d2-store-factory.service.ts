@@ -1,13 +1,12 @@
-import { copy as angularCopy } from 'angular';
+import copy from 'fast-copy';
 import {
   DestinyCharacterComponent,
   DestinyItemComponent,
   DestinyStatDefinition
-  } from 'bungie-api-ts/destiny2';
-import * as _ from 'underscore';
-import uuidv4 from 'uuid/v4';
+} from 'bungie-api-ts/destiny2';
+import * as _ from 'lodash';
 import { bungieNetPath } from '../../dim-ui/BungieImage';
-import { count, sum } from '../../util';
+import { count } from '../../util';
 import { D2ManifestDefinitions, LazyDefinition } from '../../destiny2/d2-definitions.service';
 import { Loadout } from '../../loadout/loadout.service';
 import { getClass } from './character-utils';
@@ -15,11 +14,11 @@ import { getClass } from './character-utils';
 import vaultBackground from 'app/images/vault-background.png';
 // tslint:disable-next-line:no-implicit-dependencies
 import vaultIcon from 'app/images/vault.png';
-import { showInfoPopup } from '../../shell/info-popup';
 import { t } from 'i18next';
 import { D2Store, D2Vault, D2CharacterStat } from '../store-types';
 import { D2Item } from '../item-types';
 import { D2StoresService } from '../d2-stores.service';
+import { newLoadout } from '../../loadout/loadout-utils';
 
 /**
  * A factory service for producing "stores" (characters or the vault).
@@ -33,8 +32,8 @@ const StoreProto = {
    * excluding stuff in the postmaster.
    */
   amountOfItem(this: D2Store, item: D2Item) {
-    return sum(this.items, (i) => {
-      return (i.hash === item.hash && (!i.location || !i.location.inPostmaster)) ? i.amount : 0;
+    return _.sumBy(this.items, (i) => {
+      return i.hash === item.hash && (!i.location || !i.location.inPostmaster) ? i.amount : 0;
     });
   },
 
@@ -63,24 +62,32 @@ const StoreProto = {
     if (item.location.accountWide && !this.current) {
       return 0;
     }
-    const openStacks = Math.max(0, this.capacityForItem(item) -
-                                this.buckets[item.bucket.id].length);
+    if (!item.bucket) {
+      return 0;
+    }
+    const occupiedStacks = this.buckets[item.bucket.id] ? this.buckets[item.bucket.id].length : 10;
+    const openStacks = Math.max(0, this.capacityForItem(item) - occupiedStacks);
     const maxStackSize = item.maxStackSize || 1;
     if (maxStackSize === 1) {
       return openStacks;
     } else {
       const existingAmount = this.amountOfItem(item);
-      const stackSpace = existingAmount > 0 ? (maxStackSize - (existingAmount % maxStackSize)) : 0;
-      return (openStacks * maxStackSize) + stackSpace;
+      const stackSpace = existingAmount > 0 ? maxStackSize - (existingAmount % maxStackSize) : 0;
+      return openStacks * maxStackSize + stackSpace;
     }
   },
 
-  updateCharacterInfo(this: D2Store, defs: D2ManifestDefinitions, character: DestinyCharacterComponent) {
+  updateCharacterInfo(
+    this: D2Store,
+    defs: D2ManifestDefinitions,
+    character: DestinyCharacterComponent
+  ) {
     this.level = character.levelProgression.level; // Maybe?
     this.powerLevel = character.light;
     this.background = bungieNetPath(character.emblemBackgroundPath);
     this.icon = bungieNetPath(character.emblemPath);
     this.stats = { ...this.stats, ...getCharacterStatsData(defs.Stat, character.stats) };
+    this.color = character.emblemColor;
   },
 
   // Remove an item from this store. Returns whether it actually removed anything.
@@ -89,11 +96,12 @@ const StoreProto = {
     const match = (i: D2Item) => item.index === i.index;
     const sourceIndex = this.items.findIndex(match);
     if (sourceIndex >= 0) {
-      this.items.splice(sourceIndex, 1);
+      this.items = [...this.items.slice(0, sourceIndex), ...this.items.slice(sourceIndex + 1)];
 
-      const bucketItems = this.buckets[item.location.id];
+      let bucketItems = this.buckets[item.location.id];
       const bucketIndex = bucketItems.findIndex(match);
-      bucketItems.splice(bucketIndex, 1);
+      bucketItems = [...bucketItems.slice(0, bucketIndex), ...bucketItems.slice(bucketIndex + 1)];
+      this.buckets[item.location.id] = bucketItems;
 
       if (this.current && item.location.accountWide && this.vault) {
         this.vault.vaultCounts[item.location.id].count--;
@@ -105,17 +113,8 @@ const StoreProto = {
   },
 
   addItem(this: D2Store, item: D2Item) {
-    this.items.push(item);
-    const bucketItems = this.buckets[item.location.id];
-    bucketItems.push(item);
-    if (item.location.type === 'LostItems' && bucketItems.length >= item.location.capacity) {
-      showInfoPopup('lostitems', {
-        type: 'warning',
-        title: t('Postmaster.Limit'),
-        body: t('Postmaster.Desc', { store: this.name }),
-        hide: t('Help.NeverShow')
-      });
-    }
+    this.items = [...this.items, item];
+    this.buckets[item.location.id] = [...this.buckets[item.location.id], item];
     item.owner = this.id;
 
     if (this.current && item.location.accountWide && this.vault) {
@@ -128,13 +127,8 @@ const StoreProto = {
     const allItems = (this.items as D2Item[])
       .filter((item) => item.canBeInLoadout())
       // tslint:disable-next-line:no-unnecessary-callback-wrapper
-      .map((item) => angularCopy(item));
-    return {
-      id: uuidv4(),
-      classType: -1,
-      name,
-      items: _.groupBy(allItems, (i) => i.type.toLowerCase())
-    };
+      .map((item) => copy(item));
+    return newLoadout(name, _.groupBy(allItems, (i) => i.type.toLowerCase()));
   },
 
   isDestiny1(this: D2Store) {
@@ -150,7 +144,11 @@ const StoreProto = {
   }
 };
 
-export function makeCharacter(defs: D2ManifestDefinitions, character: DestinyCharacterComponent, mostRecentLastPlayed: Date): D2Store {
+export function makeCharacter(
+  defs: D2ManifestDefinitions,
+  character: DestinyCharacterComponent,
+  mostRecentLastPlayed: Date
+): D2Store {
   const race = defs.Race[character.raceHash];
   const gender = defs.Gender[character.genderHash];
   const classy = defs.Class[character.classHash];
@@ -167,7 +165,8 @@ export function makeCharacter(defs: D2ManifestDefinitions, character: DestinyCha
     lastPlayed,
     background: bungieNetPath(character.emblemBackgroundPath),
     level: character.levelProgression.level, // Maybe?
-    percentToNextLevel: character.levelProgression.progressToNextLevel / character.levelProgression.nextLevelAt,
+    percentToNextLevel:
+      character.levelProgression.progressToNextLevel / character.levelProgression.nextLevelAt,
     powerLevel: character.light,
     stats: getCharacterStatsData(defs.Stat, character.stats),
     class: getClass(classy.classType),
@@ -175,7 +174,8 @@ export function makeCharacter(defs: D2ManifestDefinitions, character: DestinyCha
     className,
     gender: genderName,
     genderRace,
-    isVault: false
+    isVault: false,
+    color: character.emblemColor
   });
 
   store.name = `${store.genderRace} ${store.className}`;
@@ -222,7 +222,9 @@ export function makeVault(profileCurrencies: DestinyItemComponent[]): D2Vault {
       }
       const vaultBucket = item.bucket.vaultBucket;
       const usedSpace = item.bucket.vaultBucket
-        ? count((this.items as D2Item[]), (i) => i.bucket.vaultBucket && (i.bucket.vaultBucket.id === vaultBucket.id))
+        ? count(this.items, (i) =>
+            Boolean(i.bucket.vaultBucket && i.bucket.vaultBucket.id === vaultBucket.id)
+          )
         : 0;
       const openStacks = Math.max(0, this.capacityForItem(item) - usedSpace);
       const maxStackSize = item.maxStackSize || 1;
@@ -231,7 +233,7 @@ export function makeVault(profileCurrencies: DestinyItemComponent[]): D2Vault {
       } else {
         const existingAmount = this.amountOfItem(item);
         const stackSpace = Math.ceil(existingAmount / maxStackSize) * maxStackSize - existingAmount;
-        return (openStacks * maxStackSize) + stackSpace;
+        return openStacks * maxStackSize + stackSpace;
       }
     },
     removeItem(this: D2Vault, item: D2Item): D2Item {
@@ -253,10 +255,10 @@ export function makeVault(profileCurrencies: DestinyItemComponent[]): D2Vault {
 /**
  * Compute character-level stats.
  */
-function getCharacterStatsData(
+export function getCharacterStatsData(
   statDefs: LazyDefinition<DestinyStatDefinition>,
   stats: {
-      [key: number]: number;
+    [key: number]: number;
   }
 ): { [hash: number]: D2CharacterStat } {
   const statWhitelist = [2996146975, 392767087, 1943323491];
